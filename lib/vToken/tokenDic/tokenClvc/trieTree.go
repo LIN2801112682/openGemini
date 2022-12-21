@@ -13,10 +13,11 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package tokenClvc
 
-import "github.com/openGemini/openGemini/lib/utils"
+import (
+	"github.com/openGemini/openGemini/lib/utils"
+)
 
 type TrieTree struct {
 	qmin int
@@ -24,28 +25,28 @@ type TrieTree struct {
 	root *TrieTreeNode
 }
 
-func (tree *TrieTree) Qmin() int {
-	return tree.qmin
+func (t *TrieTree) Qmin() int {
+	return t.qmin
 }
 
-func (tree *TrieTree) SetQmin(qmin int) {
-	tree.qmin = qmin
+func (t *TrieTree) SetQmin(qmin int) {
+	t.qmin = qmin
 }
 
-func (tree *TrieTree) Qmax() int {
-	return tree.qmax
+func (t *TrieTree) Qmax() int {
+	return t.qmax
 }
 
-func (tree *TrieTree) SetQmax(qmax int) {
-	tree.qmax = qmax
+func (t *TrieTree) SetQmax(qmax int) {
+	t.qmax = qmax
 }
 
-func (tree *TrieTree) Root() *TrieTreeNode {
-	return tree.root
+func (t *TrieTree) Root() *TrieTreeNode {
+	return t.root
 }
 
-func (tree *TrieTree) SetRoot(root *TrieTreeNode) {
-	tree.root = root
+func (t *TrieTree) SetRoot(root *TrieTreeNode) {
+	t.root = root
 }
 
 func NewTrieTree(qmin int, qmax int) *TrieTree {

@@ -17,9 +17,8 @@ package gramIndex
 
 import (
 	"fmt"
-	"unsafe"
-
 	"github.com/openGemini/openGemini/lib/utils"
+	"unsafe"
 )
 
 type IndexTreeNode struct {
@@ -31,52 +30,52 @@ type IndexTreeNode struct {
 	addrOffset    map[*IndexTreeNode]uint16
 }
 
-func (node *IndexTreeNode) Frequency() int {
-	return node.frequency
+func (root *IndexTreeNode) AddrOffset() map[*IndexTreeNode]uint16 {
+	return root.addrOffset
 }
 
-func (node *IndexTreeNode) SetFrequency(frequency int) {
-	node.frequency = frequency
+func (root *IndexTreeNode) SetAddrOffset(addrOffset map[*IndexTreeNode]uint16) {
+	root.addrOffset = addrOffset
 }
 
-func (node *IndexTreeNode) AddrOffset() map[*IndexTreeNode]uint16 {
-	return node.addrOffset
+func (root *IndexTreeNode) Data() string {
+	return root.data
 }
 
-func (node *IndexTreeNode) SetAddrOffset(addrOffset map[*IndexTreeNode]uint16) {
-	node.addrOffset = addrOffset
+func (root *IndexTreeNode) SetData(data string) {
+	root.data = data
 }
 
-func (node *IndexTreeNode) Data() string {
-	return node.data
+func (root *IndexTreeNode) Frequency() int {
+	return root.frequency
 }
 
-func (node *IndexTreeNode) SetData(data string) {
-	node.data = data
+func (root *IndexTreeNode) SetFrequency(frequency int) {
+	root.frequency = frequency
 }
 
-func (node *IndexTreeNode) Children() map[uint8]*IndexTreeNode {
-	return node.children
+func (root *IndexTreeNode) Children() map[uint8]*IndexTreeNode {
+	return root.children
 }
 
-func (node *IndexTreeNode) SetChildren(children map[uint8]*IndexTreeNode) {
-	node.children = children
+func (root *IndexTreeNode) SetChildren(children map[uint8]*IndexTreeNode) {
+	root.children = children
 }
 
-func (node *IndexTreeNode) Isleaf() bool {
-	return node.isleaf
+func (root *IndexTreeNode) Isleaf() bool {
+	return root.isleaf
 }
 
-func (node *IndexTreeNode) SetIsleaf(isleaf bool) {
-	node.isleaf = isleaf
+func (root *IndexTreeNode) SetIsleaf(isleaf bool) {
+	root.isleaf = isleaf
 }
 
-func (node *IndexTreeNode) InvertedIndex() utils.Inverted_index {
-	return node.invertedIndex
+func (root *IndexTreeNode) InvertedIndex() utils.Inverted_index {
+	return root.invertedIndex
 }
 
-func (node *IndexTreeNode) SetInvertedIndex(invertedIndex utils.Inverted_index) {
-	node.invertedIndex = invertedIndex
+func (root *IndexTreeNode) SetInvertedIndex(invertedIndex utils.Inverted_index) {
+	root.invertedIndex = invertedIndex
 }
 
 func NewIndexTreeNode(data string) *IndexTreeNode {
@@ -115,8 +114,9 @@ func (node *IndexTreeNode) PrintIndexTreeNode(level int) {
 	for i := 0; i < level; i++ {
 		fmt.Print("      ")
 	}
-	//fmt.Print(node.data, " - ", node.frequency, " - ", node.isleaf, " - ", node.invertedIndex, " - ", node.addrOffset)
-	fmt.Print(node.data, " - ", node.frequency, " - ", node.isleaf, " - ", len(node.invertedIndex), " - ", len(node.addrOffset))
+	//fmt.Print(node.data, " - ", " - ", node.isleaf, " - ", node.invertedIndex, " - ", node.addrOffset) //, node.frequency
+	fmt.Print(node.data, " - ", node.frequency, " - ", node.isleaf, " - ", len(node.invertedIndex), " - ", len(node.addrOffset)) //, node.frequency
+
 	for _, child := range node.children {
 		child.PrintIndexTreeNode(level + 1)
 	}
@@ -187,11 +187,11 @@ var Grams []string
 var temp string
 var SumInvertLen = 0
 
-func (node *IndexTreeNode) SearchGramsFromIndexTree() {
-	if len(node.children) == 0 {
+func (root *IndexTreeNode) SearchGramsFromIndexTree() {
+	if len(root.children) == 0 {
 		return
 	}
-	for _, child := range node.children {
+	for _, child := range root.children {
 		if child != nil {
 			temp += child.data
 			if child.isleaf == true {
@@ -210,8 +210,8 @@ func (node *IndexTreeNode) SearchGramsFromIndexTree() {
 var Res []int
 var Rea []int
 
-func (node *IndexTreeNode) FixInvertedIndexSize() {
-	for _, child := range node.children {
+func (root *IndexTreeNode) FixInvertedIndexSize() {
+	for _, child := range root.children {
 		if child.isleaf == true && len(child.invertedIndex) > 0 {
 			Res = append(Res, len(child.invertedIndex)) //The append function must be used, and i cannot be used for variable addition, because there is no make initialization
 		}
@@ -219,8 +219,8 @@ func (node *IndexTreeNode) FixInvertedIndexSize() {
 	}
 }
 
-func (node *IndexTreeNode) FixInvertedAddrSize() {
-	for _, child := range node.children {
+func (root *IndexTreeNode) FixInvertedAddrSize() {
+	for _, child := range root.children {
 		if child.isleaf == true && len(child.addrOffset) > 0 {
 			Rea = append(Rea, len(child.addrOffset)) //The append function must be used, and i cannot be used for variable addition, because there is no make initialization
 		}

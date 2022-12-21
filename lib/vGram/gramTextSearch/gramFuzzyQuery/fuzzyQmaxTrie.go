@@ -150,21 +150,97 @@ func JoinCollection(str string, collection map[string]FuzzyEmpty) {
 	}
 }
 
-
-func UnionArrayMapGramFuzzy(map1 map[utils.SeriesId]FuzzyEmpty, array []utils.SeriesId ) map[utils.SeriesId]FuzzyEmpty {
+func UnionArrayMapGramFuzzy(resArrFuzzy *[]utils.SeriesId, map1 map[utils.SeriesId]FuzzyEmpty, array []utils.SeriesId) (map[utils.SeriesId]FuzzyEmpty, *[]utils.SeriesId) {
 	if len(array) == 0 {
-		return map1
+		return map1, resArrFuzzy
 	}
-	for i:=0; i<len(array);i++{
+	for i := 0; i < len(array); i++ {
 		if _, ok := map1[array[i]]; !ok {
 			map1[array[i]] = fuzzyEmpty
+			*resArrFuzzy = append(*resArrFuzzy, array[i])
 		}
 	}
-	return map1
+	return map1, resArrFuzzy
+}
+func UnionMapPos(resArrFuzzy *[]utils.SeriesId, map1 map[utils.SeriesId]FuzzyEmpty, mapPos map[utils.SeriesId][]uint16) (map[utils.SeriesId]FuzzyEmpty, *[]utils.SeriesId) {
+	if len(mapPos) == 0 {
+		return map1, resArrFuzzy
+	}
+	for key, _ := range mapPos {
+		if _, ok := map1[key]; !ok {
+			map1[key] = fuzzyEmpty
+			*resArrFuzzy = append(*resArrFuzzy, key)
+		}
+	}
+	return map1, resArrFuzzy
+}
+func FuzzySearchChildrens(indexNode *mpTrie.SearchTreeNode, resArrFuzzy *[]utils.SeriesId, resMapFuzzy map[utils.SeriesId]FuzzyEmpty, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) (map[utils.SeriesId]FuzzyEmpty, *[]utils.SeriesId) {
+	if indexNode != nil {
+		for _, child := range indexNode.Children() {
+			if child.Invtdlen() > 0 {
+				childInvertIndexOffset := child.InvtdInfo().IvtdblkOffset()
+				childInvertedIndex := make(map[utils.SeriesId][]uint16)
+				childInvertedIndex = mpTrie.SearchInvertedIndexFromCacheOrDisk(childInvertIndexOffset, buffer, invertedCache)
+				if len(childInvertedIndex) > 0 {
+					resMapFuzzy, resArrFuzzy = UnionMapPos(resArrFuzzy, resMapFuzzy, childInvertedIndex)
+				}
+			}
+
+			if child.Addrlen() > 0 {
+				childAddrOffset := child.AddrInfo().AddrblkOffset()
+				childAddrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(childAddrOffset, buffer, addrCache)
+				if len(childAddrOffsets) > 0 {
+					resMapFuzzy, resArrFuzzy = FuzzySearchAddr(resArrFuzzy, resMapFuzzy, childAddrOffsets, buffer, invertedCache)
+				}
+			}
+			resMapFuzzy, resArrFuzzy = FuzzySearchChildrens(child, resArrFuzzy, resMapFuzzy, buffer, addrCache, invertedCache)
+		}
+	}
+	return resMapFuzzy, resArrFuzzy
+}
+
+func FuzzySearchAddr(resArrFuzzy *[]utils.SeriesId, resMapFuzzy map[utils.SeriesId]FuzzyEmpty, addrOffsets map[uint64]uint16, buffer []byte, invertedCache *mpTrie.InvertedCache) (map[utils.SeriesId]FuzzyEmpty, *[]utils.SeriesId) {
+
+	if addrOffsets == nil || len(addrOffsets) == 0 {
+		return resMapFuzzy, resArrFuzzy
+	}
+	for addr, _ := range addrOffsets {
+		addrInvertedIndex := mpTrie.SearchInvertedIndexFromCacheOrDisk(addr, buffer, invertedCache)
+
+		resMapFuzzy, resArrFuzzy = UnionMapPos(resArrFuzzy, resMapFuzzy, addrInvertedIndex)
+	}
+	return resMapFuzzy, resArrFuzzy
+}
+func FuzzyReadInver(resArrFuzzy *[]utils.SeriesId, resMapFuzzy map[utils.SeriesId]FuzzyEmpty, vgMap map[uint16]string, indexRoot *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) (map[utils.SeriesId]FuzzyEmpty, *[]utils.SeriesId) {
+	gram := ""
+	for _, value := range vgMap {
+		gram = value
+	}
+
+	var invertIndexOffset uint64
+	var addrOffset uint64
+	var indexNode *mpTrie.SearchTreeNode
+	var invertIndex1 utils.Inverted_index
+
+	invertIndexOffset, addrOffset, indexNode = gramMatchQuery.SearchNodeAddrFromPersistentIndexTree(gram, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
+	if indexNode.Invtdlen() > 0 {
+		invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, buffer, invertedCache)
+	}
+	resMapFuzzy, resArrFuzzy = UnionMapPos(resArrFuzzy, resMapFuzzy, invertIndex1)
+	resMapFuzzy, resArrFuzzy = FuzzySearchChildrens(indexNode, resArrFuzzy, resMapFuzzy, buffer, addrCache, invertedCache)
+	if indexNode.Addrlen() > 0 {
+		addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, buffer, addrCache)
+		if indexNode != nil && len(addrOffsets) > 0 {
+			resMapFuzzy, resArrFuzzy = FuzzySearchAddr(resArrFuzzy, resMapFuzzy, addrOffsets, buffer, invertedCache)
+		}
+	}
+	return resMapFuzzy, resArrFuzzy
+
 }
 func FuzzyQueryGramQmaxTrie(rootFuzzyTrie *gramIndex.LogTreeNode, searchStr string, dicRootNode *gramClvc.TrieTreeNode,
 	indexRoots *mpTrie.SearchTreeNode, qmin int, qmax int, distance int, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []utils.SeriesId {
 	resArrFuzzy := make([]utils.SeriesId, 0)
+	resPointerFuzzy := &resArrFuzzy
 	resMapFuzzy := make(map[utils.SeriesId]FuzzyEmpty)
 	if len(searchStr) > qmax+distance {
 		fmt.Println("error:查询语句长度大于qmax+distance,无法匹配结果")
@@ -172,15 +248,32 @@ func FuzzyQueryGramQmaxTrie(rootFuzzyTrie *gramIndex.LogTreeNode, searchStr stri
 	}
 	collectionMinStr := make(map[string]FuzzyEmpty)
 	QmaxTrieListPath(rootFuzzyTrie, "", collectionMinStr, searchStr, distance, qmin)
+	if len(collectionMinStr) == 1 {
+		for key, _ := range collectionMinStr { //(key, dicRootNode, indexRootNode, qmin)
+			var vgMap = make(map[uint16]string)
+			gramIndex.VGConsBasicIndex(dicRootNode, qmin, key, vgMap)
+			if len(vgMap) == 1 {
+				_, resPointerFuzzy = FuzzyReadInver(resPointerFuzzy, resMapFuzzy, vgMap, indexRoots, buffer, addrCache, invertedCache)
+				return *resPointerFuzzy
+			} else {
+				arrayNew := gramMatchQuery.MatchSearch2(vgMap, indexRoots, buffer, addrCache, invertedCache)
+				return arrayNew
+			}
+		}
+	}
 	for key, _ := range collectionMinStr { //(key, dicRootNode, indexRootNode, qmin)
-		arrayNew := gramMatchQuery.MatchSearch(key, dicRootNode, indexRoots, qmin, buffer, addrCache, invertedCache)
-		resMapFuzzy = UnionArrayMapGramFuzzy(resMapFuzzy, arrayNew)
+		var vgMap = make(map[uint16]string)
+		gramIndex.VGConsBasicIndex(dicRootNode, qmin, key, vgMap)
+		if len(vgMap) == 1 {
+			resMapFuzzy, resPointerFuzzy = FuzzyReadInver(resPointerFuzzy, resMapFuzzy, vgMap, indexRoots, buffer, addrCache, invertedCache)
+		} else {
+			arrayNew := gramMatchQuery.MatchSearch2(vgMap, indexRoots, buffer, addrCache, invertedCache)
+			resMapFuzzy, resPointerFuzzy = UnionArrayMapGramFuzzy(resPointerFuzzy, resMapFuzzy, arrayNew)
+		}
 	}
-	for key, _ := range resMapFuzzy {
-		resArrFuzzy = append(resArrFuzzy, key)
-	}
-	return resArrFuzzy
+	return *resPointerFuzzy
 }
+
 /*
 func ArrayRemoveDuplicate(array []utils.SeriesId) []utils.SeriesId {
 	result := make([]utils.SeriesId, 0)

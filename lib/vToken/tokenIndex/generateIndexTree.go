@@ -13,18 +13,17 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package tokenIndex
 
 import (
 	"fmt"
-	"sort"
-	"strings"
-
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vToken/tokenDic/tokenClvc"
+	"sort"
+	"strings"
 )
 
+// 根据一批日志数据通过字典树划分VG，构建索引项集
 func GenerateIndexTree(logs []utils.LogSeries, qmin int, qmax int, root *tokenClvc.TrieTreeNode) (*IndexTree, *IndexTreeNode) {
 	indexTree := NewIndexTree(qmin, qmax)
 	var vgMaps = make(map[string]utils.Inverted_index)

@@ -16,9 +16,8 @@ limitations under the License.
 package gramRegexQuery
 
 import (
-	"strconv"
-
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
+	"strconv"
 )
 
 type Transition struct {

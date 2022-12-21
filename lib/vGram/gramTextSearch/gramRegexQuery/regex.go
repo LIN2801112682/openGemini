@@ -17,11 +17,10 @@ package gramRegexQuery
 
 import (
 	"github.com/openGemini/openGemini/lib/mpTrie"
-	"strings"
-	"time"
-
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
+	"strings"
+	"time"
 )
 
 type Regex struct {

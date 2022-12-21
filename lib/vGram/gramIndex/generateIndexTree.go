@@ -17,10 +17,9 @@ package gramIndex
 
 import (
 	"fmt"
-	"sort"
-
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
+	"sort"
 )
 
 // According to a batch of log data, the VG is divided by the gramClvc tree, and the gramIndex item set is constructed.

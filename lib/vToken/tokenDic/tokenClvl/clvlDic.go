@@ -13,15 +13,14 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package tokenClvl
 
 import (
-	"sort"
-
+	"fmt"
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vToken/tokenDic/tokenClvc"
 	"github.com/openGemini/openGemini/lib/vToken/tokenIndex"
+	"sort"
 )
 
 type GramDictionary interface {
@@ -77,11 +76,15 @@ func (clvlDic *CLVLDic) GenerateClvlDictionaryTree(logs map[utils.SeriesId]strin
 				var evaluateResult bool
 				var cNode, suffixNode *tokenIndex.IndexTreeNode
 				var pathsuffix []string
+				//当前token
 				var commomsuffix []string
+				//filestring 存储的时候以0开始
 				curstr := logs[oneSid]
 				curfields, _ := utils.DataProcess(curstr)
 				poslist := oneArray
+				//获取扩展gram
 				if len(poslist) == 0 && poslist == nil {
+					fmt.Errorf("倒排列表错误，有seriesid，但positionlist为空！")
 					break
 				} else {
 					if len(poslist) >= 1 {
@@ -112,6 +115,7 @@ func (clvlDic *CLVLDic) GenerateClvlDictionaryTree(logs map[utils.SeriesId]strin
 						suffixstr := append(commomsuffix, nexttoken)
 						suffixstr, suffixNode = GetloggestSuffixTokenNode(tokenDic, suffixstr, qmin)
 						if suffixNode == nil || len(suffixstr) == 0 {
+							fmt.Errorf("没有最长后缀！")
 							suffixNode = tokenIndex.NewIndexTreeNode("")
 						}
 						//cnode,扩展gram的倒排链表

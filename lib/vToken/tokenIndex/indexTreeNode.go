@@ -13,31 +13,21 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package tokenIndex
 
 import (
 	"fmt"
-	"unsafe"
-
 	"github.com/openGemini/openGemini/lib/utils"
+	"unsafe"
 )
 
 type IndexTreeNode struct {
-	data          string
+	data string
 	frequency     int
 	children      map[int]*IndexTreeNode
 	isleaf        bool
 	invertedIndex utils.Inverted_index
 	addrOffset    map[*IndexTreeNode]uint16
-}
-
-func (node *IndexTreeNode) Frequency() int {
-	return node.frequency
-}
-
-func (node *IndexTreeNode) SetFrequency(frequency int) {
-	node.frequency = frequency
 }
 
 func (node *IndexTreeNode) Children() map[int]*IndexTreeNode {
@@ -78,6 +68,14 @@ func (node *IndexTreeNode) AddrOffset() map[*IndexTreeNode]uint16 {
 
 func (node *IndexTreeNode) SetAddrOffset(addrOffset map[*IndexTreeNode]uint16) {
 	node.addrOffset = addrOffset
+}
+
+func (node *IndexTreeNode) Frequency() int {
+	return node.frequency
+}
+
+func (node *IndexTreeNode) SetFrequency(frequency int) {
+	node.frequency = frequency
 }
 
 func NewIndexTreeNode(data string) *IndexTreeNode {
@@ -198,11 +196,11 @@ var Tokens [][]string
 var temp []string
 var SumInvertLen = 0
 
-func (node *IndexTreeNode) SearchGramsFromIndexTree() {
-	if len(node.children) == 0 {
+func (root *IndexTreeNode) SearchGramsFromIndexTree() {
+	if len(root.children) == 0 {
 		return
 	}
-	for _, child := range node.children {
+	for _, child := range root.children {
 		temp = append(temp, child.data)
 		if child.isleaf == true {
 			for j := 0; j < len(temp); j++ {

@@ -23,19 +23,18 @@ limitations under the License.
 package clvIndex
 
 import (
-	"github.com/openGemini/openGemini/lib/mpTrie"
 	"github.com/openGemini/openGemini/lib/utils"
 )
 
 type CLVIndex struct {
-	indexTreeMap map[MeasurementAndFieldKey]*CLVIndexNode
+	indexTreeMap map[MeasurementAndFieldKey]*DicAndIndex
 	indexType    CLVIndexType
 	search       *CLVSearch
 }
 
 func NewCLVIndex(indexType CLVIndexType) *CLVIndex {
 	return &CLVIndex{
-		indexTreeMap: make(map[MeasurementAndFieldKey]*CLVIndexNode),
+		indexTreeMap: make(map[MeasurementAndFieldKey]*DicAndIndex),
 		indexType:    indexType,
 		search:       NewCLVSearch(indexType),
 	}
@@ -77,21 +76,27 @@ func NewMeasurementAndFieldKey(measurementName string, fieldKey string) Measurem
 	}
 }
 
+type DicAndIndex struct {
+	dic   *CLVDictionary
+	index *CLVIndexNode
+}
+
+func NewDicAndIndex() *DicAndIndex {
+	return &DicAndIndex{
+		dic:   NewCLVDictionary(),
+		index: NewCLVIndexNode(),
+	}
+}
+
 func (clvIndex *CLVIndex) CreateCLVIndex(log string, tsid uint64, timeStamp int64, measurement string, fieldName string) {
 	measurementAndFieldKey := NewMeasurementAndFieldKey(measurement, fieldName)
-	if _, ok := clvIndex.indexTreeMap[measurementAndFieldKey]; !ok { //Execute only once
-		dic := NewCLVDictionary()
-		if clvIndex.indexType == VGRAM {
-			dicPath := DICOUTPATH + measurement + "/" + fieldName + "/" + "VGRAM/" + "dic/" + "dic0.txt"
-			dic.VgramDicRoot = mpTrie.UnserializeGramDicFromFile(QMINGRAM, QMAXGRAM, dicPath)
-			dic.VgramDicRoot.PrintTree()
-		} else if clvIndex.indexType == VTOKEN {
-			dicPath := DICOUTPATH + measurement + "/" + fieldName + "/" + "VTOKEN/" + "dic/" + "dic0.txt"
-			dic.VtokenDicRoot = mpTrie.UnserializeTokenDicFromFile(QMINTOKEN, QMAXTOKEN, dicPath)
-		}
-		clvIndex.indexTreeMap[measurementAndFieldKey] = NewCLVIndexNode(clvIndex.indexType, dic, measurementAndFieldKey)
+	if _, ok := clvIndex.indexTreeMap[measurementAndFieldKey]; !ok {
+		clvIndex.indexTreeMap[measurementAndFieldKey] = NewDicAndIndex() //Start with the configuration dictionary
 	}
-	clvIndex.indexTreeMap[measurementAndFieldKey].CreateCLVIndexIfNotExists(log, tsid, timeStamp)
+	if DicIndex != MAXDICBUFFER {
+		clvIndex.indexTreeMap[measurementAndFieldKey].dic.CreateDictionaryIfNotExists(log, tsid, timeStamp, clvIndex.indexType)
+	}
+	clvIndex.indexTreeMap[measurementAndFieldKey].index.CreateCLVIndexIfNotExists(log, tsid, timeStamp, clvIndex.indexType, clvIndex.indexTreeMap[measurementAndFieldKey].dic.DicType, *clvIndex.indexTreeMap[measurementAndFieldKey].dic)
 }
 
 func (clvIndex *CLVIndex) CLVSearch(measurementName string, fieldKey string, queryType QuerySearch, queryStr string) []utils.SeriesId {

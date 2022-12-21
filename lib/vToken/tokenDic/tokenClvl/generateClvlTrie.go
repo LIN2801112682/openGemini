@@ -13,16 +13,15 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package tokenClvl
 
 import (
-	"math"
-	"strings"
-
+	"fmt"
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vToken/tokenDic/tokenClvc"
 	"github.com/openGemini/openGemini/lib/vToken/tokenIndex"
+	"math"
+	"strings"
 )
 
 func TokenCalculateIndexTrieInverstlist(indextree *tokenIndex.IndexTree) *[]int {
@@ -190,6 +189,7 @@ func EvaluateToken(sampleStringOfWLength int, g1 *tokenIndex.IndexTreeNode, g1Ar
 
 func IfEquals(strfields []string, start int, end int, cstr []string) bool {
 	if len(strfields) == 0 || len(cstr) == 0 {
+		fmt.Errorf("当前串为空或g1为空！")
 		return false
 	}
 	var matchFields = make([]string, 0)
@@ -198,6 +198,7 @@ func IfEquals(strfields []string, start int, end int, cstr []string) bool {
 			matchFields = append(matchFields, strfields[i])
 		}
 	} else {
+		fmt.Errorf("The string to be matched is out of bounds")
 		return false
 	}
 

@@ -28,36 +28,36 @@ type IndexTree struct {
 	root *IndexTreeNode
 }
 
-func (tree *IndexTree) Qmin() int {
-	return tree.qmin
+func (i *IndexTree) Qmin() int {
+	return i.qmin
 }
 
-func (tree *IndexTree) SetQmin(qmin int) {
-	tree.qmin = qmin
+func (i *IndexTree) SetQmin(qmin int) {
+	i.qmin = qmin
 }
 
-func (tree *IndexTree) Qmax() int {
-	return tree.qmax
+func (i *IndexTree) Qmax() int {
+	return i.qmax
 }
 
-func (tree *IndexTree) SetQmax(qmax int) {
-	tree.qmax = qmax
+func (i *IndexTree) SetQmax(qmax int) {
+	i.qmax = qmax
 }
 
-func (tree *IndexTree) Cout() int {
-	return tree.cout
+func (i *IndexTree) Cout() int {
+	return i.cout
 }
 
-func (tree *IndexTree) SetCout(cout int) {
-	tree.cout = cout
+func (i *IndexTree) SetCout(cout int) {
+	i.cout = cout
 }
 
-func (tree *IndexTree) Root() *IndexTreeNode {
-	return tree.root
+func (i *IndexTree) Root() *IndexTreeNode {
+	return i.root
 }
 
-func (tree *IndexTree) SetRoot(root *IndexTreeNode) {
-	tree.root = root
+func (i *IndexTree) SetRoot(root *IndexTreeNode) {
+	i.root = root
 }
 
 func NewIndexTree(qmin int, qmax int) *IndexTree {
@@ -153,6 +153,13 @@ func (tree *IndexTree) PrintIndexTree() {
 	tree.root.PrintIndexTreeNode(0)
 }
 
+func (tree *IndexTree) UpdateIndexRootFrequency() {
+	for _, child := range tree.root.children {
+		tree.root.frequency += child.frequency
+	}
+	tree.root.frequency--
+}
+
 // regexTestCLVL need
 func (indextree *IndexTree) ToDicTree() *gramClvc.TrieTree {
 	r := indextree.root.ConvertNode()
@@ -162,21 +169,14 @@ func (indextree *IndexTree) ToDicTree() *gramClvc.TrieTree {
 }
 
 // regexTestCLVL need
-func (indextree *IndexTreeNode) ConvertNode() *gramClvc.TrieTreeNode {
-	node := gramClvc.NewTrieTreeNode(indextree.data)
-	node.SetIsleaf(indextree.isleaf)
-	for i := range indextree.children {
-		ctrienode := indextree.children[i].ConvertNode()
+func (indextreenode *IndexTreeNode) ConvertNode() *gramClvc.TrieTreeNode {
+	node := gramClvc.NewTrieTreeNode(indextreenode.data)
+	node.SetIsleaf(indextreenode.isleaf)
+	for i := range indextreenode.children {
+		ctrienode := indextreenode.children[i].ConvertNode()
 		node.Children()[i] = ctrienode
 	}
 	return node
-}
-
-func (tree *IndexTree) UpdateIndexRootFrequency() {
-	for _, child := range tree.root.children {
-		tree.root.frequency += child.frequency
-	}
-	tree.root.frequency--
 }
 
 func (tree *IndexTree) GetMemorySizeOfIndexTree() {
@@ -192,8 +192,8 @@ func (tree *IndexTree) GetMemorySizeOfIndexTree() {
 	fmt.Println(AddrSize)
 }
 
-func (tree *IndexTree) SearchTermLengthAndTermAvgLenFromIndexTree() {
-	tree.Root().SearchGramsFromIndexTree()
+func (root *IndexTree) SearchTermLengthAndTermAvgLenFromIndexTree() {
+	root.Root().SearchGramsFromIndexTree()
 	fmt.Println("============== grams len: =======================")
 	fmt.Println(len(Grams))
 	fmt.Println("============== grams agv: =======================")

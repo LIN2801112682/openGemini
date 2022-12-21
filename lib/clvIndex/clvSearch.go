@@ -66,7 +66,7 @@ type CLVSearch struct {
 func NewCLVSearch(clvType CLVIndexType) *CLVSearch {
 	return &CLVSearch{
 		clvType:    clvType,
-		buffer:     make([]byte, 0),//[]byte{},
+		buffer:     make([]byte, 0), //[]byte{},
 		size:       0,
 		searchTree: nil,
 		indexRoots: nil,
@@ -76,19 +76,15 @@ func NewCLVSearch(clvType CLVIndexType) *CLVSearch {
 	}
 }
 
-//查询存放所有的indexTree
-type VGramIndexTreeSlice *mpTrie.SearchTreeNode
-type VTokenIndexTreeSlice *mpTrie.SearchTreeNode
-
 func (clvSearch *CLVSearch) SearchIndexTreeFromDisk(measurement string, fieldKey string, clvType CLVIndexType) {
 	if clvType == VGRAM {
 		clvSearch.buffer, clvSearch.size = mpTrie.GetBytesFromFile(INDEXOUTPATH + measurement + "/" + fieldKey + "/" + "VGRAM/" + "index/" + "index0.txt")
-		clvSearch.searchTree, clvSearch.addrCache, clvSearch.invtdCache = mpTrie.UnserializeGramIndexFromFile(clvSearch.buffer, clvSearch.size, 500000, 500000) //UnserializeGramIndexFromFile
+		clvSearch.searchTree, clvSearch.addrCache, clvSearch.invtdCache = mpTrie.UnserializeGramIndexFromFile(clvSearch.buffer, clvSearch.size, 5000000, 5000000) //UnserializeGramIndexFromFile
 		clvSearch.indexRoots = clvSearch.searchTree.Root()
-		clvSearch.logTree = mpTrie.UnserializeLogTreeFromFile(QMAXGRAM,INDEXOUTPATH + measurement + "/" + fieldKey + "/" + "VGRAM/" + "logTree/" + "log0.txt")
+		clvSearch.logTree = mpTrie.UnserializeLogTreeFromFile(INDEXOUTPATH + measurement + "/" + fieldKey + "/" + "VGRAM/" + "logTree/" + "log0.txt")
 	} else if clvType == VTOKEN {
 		clvSearch.buffer, clvSearch.size = mpTrie.GetBytesFromFile(INDEXOUTPATH + measurement + "/" + fieldKey + "/" + "VTOKEN/" + "index/" + "index0.txt")
-		clvSearch.searchTree, clvSearch.addrCache, clvSearch.invtdCache = mpTrie.UnserializeTokenIndexFromFile(clvSearch.buffer, clvSearch.size, 500000, 500000) //UnserializeGramIndexFromFile
+		clvSearch.searchTree, clvSearch.addrCache, clvSearch.invtdCache = mpTrie.UnserializeTokenIndexFromFile(clvSearch.buffer, clvSearch.size, 5000000, 5000000) //UnserializeGramIndexFromFile
 		clvSearch.indexRoots = clvSearch.searchTree.Root()
 		clvSearch.logTree = gramIndex.NewLogTree(-1)
 	}

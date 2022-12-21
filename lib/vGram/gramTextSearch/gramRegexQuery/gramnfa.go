@@ -21,7 +21,6 @@ import (
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
 	"github.com/openGemini/openGemini/lib/vGram/gramTextSearch/gramMatchQuery"
-	"math"
 )
 
 type GnfaNode struct {
@@ -355,19 +354,23 @@ func (g *Gnfa) Isfinal(node *GnfaNode) bool {
 
 func SearchString(indexRoot *mpTrie.SearchTreeNode, label string, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) *utils.Inverted_index {
 	var invertIndex utils.Inverted_index
-	var invertIndexOffset uint64 = math.MaxUint64 //todo
-	var addrOffset uint64 = math.MaxUint64
+	var invertIndexOffset uint64
+	var addrOffset uint64
 	var indexNode *mpTrie.SearchTreeNode
 	var invertIndex1 utils.Inverted_index
 	var invertIndex2 utils.Inverted_index
 	var invertIndex3 utils.Inverted_index
 	invertIndexOffset, addrOffset, indexNode = gramMatchQuery.SearchNodeAddrFromPersistentIndexTree(label, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
-	invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, buffer, invertedCache)
+	if indexNode.Invtdlen() > 0 {
+		invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, buffer, invertedCache)
+	}
 	invertIndex = mpTrie.DeepCopy(invertIndex1)
 	invertIndex2 = mpTrie.SearchInvertedListFromChildrensOfCurrentNode(indexNode, invertIndex2, buffer, addrCache, invertedCache)
-	addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, buffer, addrCache)
-	if indexNode != nil && len(addrOffsets) > 0 {
-		invertIndex3 = mpTrie.TurnAddr2InvertLists(addrOffsets, buffer, invertedCache)
+	if indexNode.Addrlen() > 0 {
+		addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, buffer, addrCache)
+		if indexNode != nil && len(addrOffsets) > 0 {
+			invertIndex3 = mpTrie.TurnAddr2InvertLists(addrOffsets, buffer, invertedCache)
+		}
 	}
 	invertIndex = mpTrie.MergeMapsInvertLists(invertIndex2, invertIndex)
 	invertIndex = mpTrie.MergeMapsInvertLists(invertIndex3, invertIndex)

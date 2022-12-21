@@ -16,11 +16,10 @@ limitations under the License.
 package gramClvl
 
 import (
-	"math"
-
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
 	"github.com/openGemini/openGemini/lib/vGram/gramIndex"
+	"math"
 )
 
 func HasIndexNode(children map[uint8]*gramIndex.IndexTreeNode, data string) int8 {

@@ -16,11 +16,11 @@ limitations under the License.
 package gramClvl
 
 import (
-	"sort"
-
+	"fmt"
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
 	"github.com/openGemini/openGemini/lib/vGram/gramIndex"
+	"sort"
 )
 
 type GramDictionary interface {
@@ -79,8 +79,9 @@ func (clvlDic *CLVLDic) GenerateClvlDictionaryTree(logs map[utils.SeriesId]strin
 				var commomsuffix string
 				curstr := logs[oneSid]
 				poslist := oneArray
-				// get the extended gram
+				//获取扩展gram
 				if len(poslist) == 0 && poslist == nil {
+					fmt.Errorf("倒排列表错误，有seriesid，但positionlist为空！")
 					break
 				} else {
 					if len(poslist) >= 1 {
@@ -107,6 +108,7 @@ func (clvlDic *CLVLDic) GenerateClvlDictionaryTree(logs map[utils.SeriesId]strin
 						suffixstr := commomsuffix + gramchar
 						suffixstr, suffixNode = GetloggestSuffixNode(trie, suffixstr, qmin)
 						if suffixNode == nil || len(suffixstr) == 0 {
+							fmt.Errorf("没有最长后缀！")
 							suffixNode = gramIndex.NewIndexTreeNode("")
 						}
 						cNode = gramIndex.NewIndexTreeNode(gramchar)

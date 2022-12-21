@@ -13,7 +13,6 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-
 package tokenIndex
 
 import (
@@ -28,36 +27,36 @@ type IndexTree struct {
 	root *IndexTreeNode
 }
 
-func (tree *IndexTree) Qmin() int {
-	return tree.qmin
+func (i *IndexTree) Qmin() int {
+	return i.qmin
 }
 
-func (tree *IndexTree) SetQmin(qmin int) {
-	tree.qmin = qmin
+func (i *IndexTree) SetQmin(qmin int) {
+	i.qmin = qmin
 }
 
-func (tree *IndexTree) Qmax() int {
-	return tree.qmax
+func (i *IndexTree) Qmax() int {
+	return i.qmax
 }
 
-func (tree *IndexTree) SetQmax(qmax int) {
-	tree.qmax = qmax
+func (i *IndexTree) SetQmax(qmax int) {
+	i.qmax = qmax
 }
 
-func (tree *IndexTree) Cout() int {
-	return tree.cout
+func (i *IndexTree) Cout() int {
+	return i.cout
 }
 
-func (tree *IndexTree) SetCout(cout int) {
-	tree.cout = cout
+func (i *IndexTree) SetCout(cout int) {
+	i.cout = cout
 }
 
-func (tree *IndexTree) Root() *IndexTreeNode {
-	return tree.root
+func (i *IndexTree) Root() *IndexTreeNode {
+	return i.root
 }
 
-func (tree *IndexTree) SetRoot(root *IndexTreeNode) {
-	tree.root = root
+func (i *IndexTree) SetRoot(root *IndexTreeNode) {
+	i.root = root
 }
 
 // 初始化trieTree

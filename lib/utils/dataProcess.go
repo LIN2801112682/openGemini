@@ -16,10 +16,11 @@ limitations under the License.
 package utils
 
 import (
-	"github.com/clipperhouse/uax29/words"
 	"math/rand"
 	"strings"
 	"time"
+
+	"github.com/clipperhouse/uax29/words"
 )
 
 type LogSeries struct {
