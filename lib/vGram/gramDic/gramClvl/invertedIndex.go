@@ -38,7 +38,7 @@ func PrintInverted_index(node *gramIndex.IndexTreeNode) {
 	}
 }
 
-func RemoveInvertedIndex(indexlist gramIndex.Inverted_index, delsid utils.SeriesId, delpos []uint16) {
+func RemoveInvertedIndex(indexlist utils.Inverted_index, delsid utils.SeriesId, delpos []uint16) {
 	if indexlist == nil {
 		// map is nil
 		return
@@ -73,7 +73,7 @@ func RemoveInvertedIndex(indexlist gramIndex.Inverted_index, delsid utils.Series
 	}
 }
 
-func SuffixRemoveInvertedIndex(indexlist gramIndex.Inverted_index, delsid utils.SeriesId, delpos []uint16) {
+func SuffixRemoveInvertedIndex(indexlist utils.Inverted_index, delsid utils.SeriesId, delpos []uint16) {
 	if indexlist == nil {
 		// map is nil
 		return

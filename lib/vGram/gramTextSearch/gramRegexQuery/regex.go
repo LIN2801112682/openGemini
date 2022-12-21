@@ -16,12 +16,12 @@ limitations under the License.
 package gramRegexQuery
 
 import (
+	"github.com/openGemini/openGemini/lib/mpTrie"
 	"strings"
 	"time"
 
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
-	"github.com/openGemini/openGemini/lib/vGram/gramIndex"
 )
 
 type Regex struct {
@@ -107,24 +107,24 @@ func RegexStandardization(re string) string {
 	return re
 }
 
-func RegexSearch(re string, trietree *gramClvc.TrieTree, indextree *gramIndex.IndexTree) []utils.SeriesId {
+func RegexSearch(re string, trietree *gramClvc.TrieTree, qmin int, index *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []utils.SeriesId {
 	//fmt.Println(re + " : ")
 	//start := time.Now().UnixMicro()
 	split := strings.Contains(re, ".")
 	result := make([]utils.SeriesId, 0)
 	if !split {
-		sidlist := MatchRegex(re, trietree, indextree)
+		sidlist := MatchRegex(re, trietree, index, buffer, addrCache, invertedCache)
 		result = make([]utils.SeriesId, len(sidlist))
 		for i := 0; i < len(sidlist); i++ {
 			result[i] = sidlist[i].sid
 		}
 	} else {
-		isnoterror, rplist := GenerateRegexPlusList(re, indextree.Qmin())
+		isnoterror, rplist := GenerateRegexPlusList(re, qmin)
 		if !isnoterror {
 			//fmt.Println("syntax error !")
 			return nil
 		} else {
-			resultmap := MatchRegexPlusList(rplist, trietree, indextree)
+			resultmap := MatchRegexPlusList(rplist, trietree, index, buffer, addrCache, invertedCache)
 			result = make([]utils.SeriesId, len(resultmap))
 			index := 0
 			for key := range resultmap {
@@ -139,7 +139,7 @@ func RegexSearch(re string, trietree *gramClvc.TrieTree, indextree *gramIndex.In
 	return result
 }
 
-func MatchRegex(re string, trietree *gramClvc.TrieTree, indextree *gramIndex.IndexTree) []*SeriesIdWithPosition {
+func MatchRegex(re string, trietree *gramClvc.TrieTree, index *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []*SeriesIdWithPosition {
 	//gramnum := 0
 	//ctime := int64(0)
 	//mtime := int64(0)
@@ -152,7 +152,7 @@ func MatchRegex(re string, trietree *gramClvc.TrieTree, indextree *gramIndex.Ind
 	//ctime = conend - constart
 
 	//lstart := time.Now().UnixMicro()
-	regex.LoadInvertedIndex(indextree)
+	regex.LoadInvertedIndex(index, buffer, addrCache, invertedCache)
 	//	lend := time.Now().UnixMicro()
 	//ltime = lend - lstart
 
@@ -181,7 +181,7 @@ func MatchRegex(re string, trietree *gramClvc.TrieTree, indextree *gramIndex.Ind
 	return sidlist
 }
 
-func MatchRegexPlusList(regexpluslist []*RegexPlus, trietree *gramClvc.TrieTree, indextree *gramIndex.IndexTree) map[utils.SeriesId][]uint16 {
+func MatchRegexPlusList(regexpluslist []*RegexPlus, trietree *gramClvc.TrieTree, indextree *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId][]uint16 {
 	gramnum := 0
 	//ctime := int64(0)
 	mtime := int64(0)
@@ -196,7 +196,7 @@ func MatchRegexPlusList(regexpluslist []*RegexPlus, trietree *gramClvc.TrieTree,
 		//ctime = conend - constart
 
 		lstart := time.Now().UnixMicro()
-		regexpluslist[i].gnfa.LoadInvertedIndex(indextree)
+		regexpluslist[i].gnfa.LoadInvertedIndex(indextree, buffer, addrCache, invertedCache)
 		lend := time.Now().UnixMicro()
 		ltime += lend - lstart
 
@@ -302,8 +302,8 @@ func CanMergeWithOp(lastend uint16, nextstart uint16, op uint8) bool {
 	}
 }
 
-func (re *Regex) LoadInvertedIndex(indextree *gramIndex.IndexTree) {
-	re.gnfa.LoadInvertedIndex(indextree)
+func (re *Regex) LoadInvertedIndex(index *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) {
+	re.gnfa.LoadInvertedIndex(index, buffer, addrCache, invertedCache)
 }
 
 func (re *Regex) Match() []*SeriesIdWithPosition {

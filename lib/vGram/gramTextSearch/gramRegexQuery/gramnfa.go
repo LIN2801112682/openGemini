@@ -17,11 +17,11 @@ package gramRegexQuery
 
 import (
 	"fmt"
-
+	"github.com/openGemini/openGemini/lib/mpTrie"
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
-	"github.com/openGemini/openGemini/lib/vGram/gramIndex"
 	"github.com/openGemini/openGemini/lib/vGram/gramTextSearch/gramMatchQuery"
+	"math"
 )
 
 type GnfaNode struct {
@@ -43,7 +43,7 @@ type GnfaEdge struct {
 	isloop   bool
 	start    *GnfaNode
 	end      *GnfaNode
-	index    *gramIndex.Inverted_index
+	index    *utils.Inverted_index
 }
 
 type Gnfa struct {
@@ -238,11 +238,11 @@ func (g *Gnfa) AddEdge(label string, start *GnfaNode, end *GnfaNode) {
 
 }
 
-func (g *Gnfa) LoadInvertedIndex(index *gramIndex.IndexTree) {
+func (g *Gnfa) LoadInvertedIndex(index *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) {
 	for i := 0; i < len(g.edges); i++ {
 		edge := g.edges[i]
 		label := edge.label
-		invertedindex := SearchString(index, label)
+		invertedindex := SearchString(index, label, buffer, addrCache, invertedCache)
 		edge.index = invertedindex
 	}
 }
@@ -353,18 +353,24 @@ func (g *Gnfa) Isfinal(node *GnfaNode) bool {
 	return false
 }
 
-func SearchString(tree *gramIndex.IndexTree, label string) *gramIndex.Inverted_index {
-	var invertIndex gramIndex.Inverted_index
-	var indexNode *gramIndex.IndexTreeNode
-	var invertIndex2 gramIndex.Inverted_index
-	var invertIndex3 gramIndex.Inverted_index
-	invertIndex, indexNode = gramMatchQuery.SearchInvertedListFromCurrentNode(label, tree.Root(), 0, invertIndex, indexNode)
-	invertIndex2 = gramMatchQuery.SearchInvertedListFromChildrensOfCurrentNode(indexNode, nil)
-	if indexNode != nil && len(indexNode.AddrOffset()) > 0 {
-		invertIndex3 = gramMatchQuery.TurnAddr2InvertLists(indexNode.AddrOffset(), invertIndex3)
+func SearchString(indexRoot *mpTrie.SearchTreeNode, label string, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) *utils.Inverted_index {
+	var invertIndex utils.Inverted_index
+	var invertIndexOffset uint64 = math.MaxUint64 //todo
+	var addrOffset uint64 = math.MaxUint64
+	var indexNode *mpTrie.SearchTreeNode
+	var invertIndex1 utils.Inverted_index
+	var invertIndex2 utils.Inverted_index
+	var invertIndex3 utils.Inverted_index
+	invertIndexOffset, addrOffset, indexNode = gramMatchQuery.SearchNodeAddrFromPersistentIndexTree(label, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
+	invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, buffer, invertedCache)
+	invertIndex = mpTrie.DeepCopy(invertIndex1)
+	invertIndex2 = mpTrie.SearchInvertedListFromChildrensOfCurrentNode(indexNode, invertIndex2, buffer, addrCache, invertedCache)
+	addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, buffer, addrCache)
+	if indexNode != nil && len(addrOffsets) > 0 {
+		invertIndex3 = mpTrie.TurnAddr2InvertLists(addrOffsets, buffer, invertedCache)
 	}
-	invertIndex = gramMatchQuery.MergeMapsInvertLists(invertIndex2, invertIndex)
-	invertIndex = gramMatchQuery.MergeMapsInvertLists(invertIndex3, invertIndex)
+	invertIndex = mpTrie.MergeMapsInvertLists(invertIndex2, invertIndex)
+	invertIndex = mpTrie.MergeMapsInvertLists(invertIndex3, invertIndex)
 
 	return &invertIndex
 }

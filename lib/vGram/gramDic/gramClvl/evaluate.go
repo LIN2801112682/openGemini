@@ -22,7 +22,7 @@ import (
 
 func GeneratorTw(sampleStringOfW map[utils.SeriesId]string, qmin int, trie *gramIndex.IndexTree) *gramIndex.IndexTree {
 	treeW := gramIndex.NewIndexTrie(trie.Qmin())
-	var vgMaps = make(map[string]gramIndex.Inverted_index)
+	var vgMaps = make(map[string]utils.Inverted_index)
 	for key, value := range sampleStringOfW {
 		var vgMap map[uint16]string
 		vgMap = make(map[uint16]string)

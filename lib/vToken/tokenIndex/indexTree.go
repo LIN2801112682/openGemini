@@ -13,9 +13,11 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package tokenIndex
 
 import (
+	"fmt"
 	"github.com/openGemini/openGemini/lib/utils"
 )
 
@@ -26,36 +28,36 @@ type IndexTree struct {
 	root *IndexTreeNode
 }
 
-func (i *IndexTree) Qmin() int {
-	return i.qmin
+func (tree *IndexTree) Qmin() int {
+	return tree.qmin
 }
 
-func (i *IndexTree) SetQmin(qmin int) {
-	i.qmin = qmin
+func (tree *IndexTree) SetQmin(qmin int) {
+	tree.qmin = qmin
 }
 
-func (i *IndexTree) Qmax() int {
-	return i.qmax
+func (tree *IndexTree) Qmax() int {
+	return tree.qmax
 }
 
-func (i *IndexTree) SetQmax(qmax int) {
-	i.qmax = qmax
+func (tree *IndexTree) SetQmax(qmax int) {
+	tree.qmax = qmax
 }
 
-func (i *IndexTree) Cout() int {
-	return i.cout
+func (tree *IndexTree) Cout() int {
+	return tree.cout
 }
 
-func (i *IndexTree) SetCout(cout int) {
-	i.cout = cout
+func (tree *IndexTree) SetCout(cout int) {
+	tree.cout = cout
 }
 
-func (i *IndexTree) Root() *IndexTreeNode {
-	return i.root
+func (tree *IndexTree) Root() *IndexTreeNode {
+	return tree.root
 }
 
-func (i *IndexTree) SetRoot(root *IndexTreeNode) {
-	i.root = root
+func (tree *IndexTree) SetRoot(root *IndexTreeNode) {
+	tree.root = root
 }
 
 // 初始化trieTree
@@ -77,7 +79,7 @@ func NewIndexTrie08(qmin int) *IndexTree {
 	}
 }
 
-func (tree *IndexTree) InsertIntoIndexTree(token []string, inverted_index Inverted_index) *IndexTreeNode {
+func (tree *IndexTree) InsertIntoIndexTree(token []string, inverted_index utils.Inverted_index) *IndexTreeNode {
 	node := tree.root
 	var childIndex = -1
 	var addr *IndexTreeNode
@@ -89,6 +91,7 @@ func (tree *IndexTree) InsertIntoIndexTree(token []string, inverted_index Invert
 			node = currentNode
 		} else {
 			node = node.children[childIndex]
+			node.frequency++
 		}
 		if i == len(token)-1 {
 			node.isleaf = true
@@ -113,6 +116,7 @@ func (tree *IndexTree) InsertOnlyTokenIntoIndexTree(tokenSubs []SubTokenOffset, 
 				node = currentNode
 			} else {
 				node = node.children[childIndex]
+				node.frequency++
 			}
 			if i == len(token)-1 {
 				node.isleaf = true
@@ -135,6 +139,7 @@ func (tree *IndexTree) InsertTokensIntoIndexTree08(token *[]string, sid utils.Se
 			node = currentnode
 		} else {
 			node = node.children[childindex]
+			node.frequency++
 		}
 		if i == len(*token)-1 {
 			node.isleaf = true
@@ -151,47 +156,23 @@ func (tree *IndexTree) PrintIndexTree() {
 	tree.root.PrintIndexTreeNode(0)
 }
 
-var Res []int
-var Rea []int
-
-func (root *IndexTreeNode) FixInvertedIndexSize() {
-	for _, child := range root.children {
-		if child.isleaf == true && len(child.invertedIndex) > 0 {
-			Res = append(Res, len(child.invertedIndex))
-		}
-		child.FixInvertedIndexSize()
-	}
+func (tree *IndexTree) GetMemorySizeOfIndexTree() {
+	tree.root.GetMemorySizeOfIndexTreeTheoretical(0)
+	fmt.Println("==============Theoretical MemoUsed===============")
+	fmt.Println(TheoreticalMemoUsed)
+	tree.root.GetMemorySizeOfIndexTreeExact(0)
+	fmt.Println("==============Exact MemoUsed=====================")
+	fmt.Println(ExactMemoUsed)
+	fmt.Println("==============INVERTEDSIZE=======================")
+	fmt.Println(InvertedSize)
+	fmt.Println("==================ADDRSIZE=======================")
+	fmt.Println(AddrSize)
 }
 
-func (root *IndexTreeNode) FixInvertedAddrSize() {
-	for _, child := range root.children {
-		if child.isleaf == true && len(child.addrOffset) > 0 {
-			Rea = append(Rea, len(child.addrOffset)) //The append function must be used, and i cannot be used for variable addition, because there is no make initialization
-		}
-		child.FixInvertedAddrSize()
-	}
-}
-
-var Grams [][]string
-var temp []string
-var SumInvertLen = 0
-
-func (root *IndexTreeNode) SearchGramsFromIndexTree() {
-	if len(root.children) == 0 {
-		return
-	}
-	for _, child := range root.children {
-		temp = append(temp, child.data)
-		if child.isleaf == true {
-			for j := 0; j < len(temp); j++ {
-				val := temp[j]
-				SumInvertLen += len(val)
-			}
-			Grams = append(Grams, temp)
-		}
-		child.SearchGramsFromIndexTree()
-		if len(temp) > 0 {
-			temp = temp[:len(temp)-1]
-		}
-	}
+func (root *IndexTree) SearchTermLengthAndTermAvgLenFromIndexTree() {
+	root.Root().SearchGramsFromIndexTree()
+	fmt.Println("============== tokens len: ======================")
+	fmt.Println(len(Tokens))
+	fmt.Println("============== tokens agv: ======================")
+	fmt.Println(SumInvertLen / len(Tokens))
 }

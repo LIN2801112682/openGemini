@@ -54,6 +54,24 @@ func (clvcDic *CLVCDic) GenerateClvcDictionaryTree(logs []utils.LogSeries, qmin 
 			clvcDic.TrieTree.InsertIntoTrieTree(str)
 		}
 	}
+	/*for i := range logs {
+		str := logs[i].Log
+		if len(str) >= qmax {
+			for k := qmin; k <= qmax; k++ {
+				for j := 0; j < len(str)-k+1; j++ {
+					substring := str[j : j+k]
+					clvcDic.TrieTree.InsertIntoTrieTree(substring)
+				}
+			}
+		} else {
+			for k := qmin; k <= len(str); k++ {
+				for j := 0; j < len(str)-k+1; j++ {
+					substring := str[j : j+k]
+					clvcDic.TrieTree.InsertIntoTrieTree(substring)
+				}
+			}
+		}
+	}*/
 	clvcDic.TrieTree.PruneTree(T)
 	clvcDic.TrieTree.UpdateRootFrequency()
 }

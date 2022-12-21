@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package tokenClvc
 
 import (
@@ -29,36 +30,36 @@ type TrieTreeNode struct {
 	isleaf    bool
 }
 
-func (t *TrieTreeNode) Children() map[int]*TrieTreeNode {
-	return t.children
+func (node *TrieTreeNode) Children() map[int]*TrieTreeNode {
+	return node.children
 }
 
-func (t *TrieTreeNode) SetChildren(children map[int]*TrieTreeNode) {
-	t.children = children
+func (node *TrieTreeNode) SetChildren(children map[int]*TrieTreeNode) {
+	node.children = children
 }
 
-func (t *TrieTreeNode) Data() string {
-	return t.data
+func (node *TrieTreeNode) Data() string {
+	return node.data
 }
 
-func (t *TrieTreeNode) SetData(data string) {
-	t.data = data
+func (node *TrieTreeNode) SetData(data string) {
+	node.data = data
 }
 
-func (t *TrieTreeNode) Frequency() int {
-	return t.frequency
+func (node *TrieTreeNode) Frequency() int {
+	return node.frequency
 }
 
-func (t *TrieTreeNode) SetFrequency(frequency int) {
-	t.frequency = frequency
+func (node *TrieTreeNode) SetFrequency(frequency int) {
+	node.frequency = frequency
 }
 
-func (t *TrieTreeNode) Isleaf() bool {
-	return t.isleaf
+func (node *TrieTreeNode) Isleaf() bool {
+	return node.isleaf
 }
 
-func (t *TrieTreeNode) SetIsleaf(isleaf bool) {
-	t.isleaf = isleaf
+func (node *TrieTreeNode) SetIsleaf(isleaf bool) {
+	node.isleaf = isleaf
 }
 
 func NewTrieTreeNode(data string) *TrieTreeNode {

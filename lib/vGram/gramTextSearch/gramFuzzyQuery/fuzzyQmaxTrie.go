@@ -17,13 +17,12 @@ package gramFuzzyQuery
 
 import (
 	"fmt"
-	"sort"
-	"strings"
-
+	"github.com/openGemini/openGemini/lib/mpTrie"
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
 	"github.com/openGemini/openGemini/lib/vGram/gramIndex"
 	"github.com/openGemini/openGemini/lib/vGram/gramTextSearch/gramMatchQuery"
+	"strings"
 )
 
 type FuzzyEmpty struct{}
@@ -151,6 +150,38 @@ func JoinCollection(str string, collection map[string]FuzzyEmpty) {
 	}
 }
 
+
+func UnionArrayMapGramFuzzy(map1 map[utils.SeriesId]FuzzyEmpty, array []utils.SeriesId ) map[utils.SeriesId]FuzzyEmpty {
+	if len(array) == 0 {
+		return map1
+	}
+	for i:=0; i<len(array);i++{
+		if _, ok := map1[array[i]]; !ok {
+			map1[array[i]] = fuzzyEmpty
+		}
+	}
+	return map1
+}
+func FuzzyQueryGramQmaxTrie(rootFuzzyTrie *gramIndex.LogTreeNode, searchStr string, dicRootNode *gramClvc.TrieTreeNode,
+	indexRoots *mpTrie.SearchTreeNode, qmin int, qmax int, distance int, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []utils.SeriesId {
+	resArrFuzzy := make([]utils.SeriesId, 0)
+	resMapFuzzy := make(map[utils.SeriesId]FuzzyEmpty)
+	if len(searchStr) > qmax+distance {
+		fmt.Println("error:查询语句长度大于qmax+distance,无法匹配结果")
+		return resArrFuzzy
+	}
+	collectionMinStr := make(map[string]FuzzyEmpty)
+	QmaxTrieListPath(rootFuzzyTrie, "", collectionMinStr, searchStr, distance, qmin)
+	for key, _ := range collectionMinStr { //(key, dicRootNode, indexRootNode, qmin)
+		arrayNew := gramMatchQuery.MatchSearch(key, dicRootNode, indexRoots, qmin, buffer, addrCache, invertedCache)
+		resMapFuzzy = UnionArrayMapGramFuzzy(resMapFuzzy, arrayNew)
+	}
+	for key, _ := range resMapFuzzy {
+		resArrFuzzy = append(resArrFuzzy, key)
+	}
+	return resArrFuzzy
+}
+/*
 func ArrayRemoveDuplicate(array []utils.SeriesId) []utils.SeriesId {
 	result := make([]utils.SeriesId, 0)
 	var sid uint64
@@ -166,10 +197,9 @@ func ArrayRemoveDuplicate(array []utils.SeriesId) []utils.SeriesId {
 	}
 	return result
 }
-
 func ArraySortAndRemoveDuplicate(array []utils.SeriesId) []utils.SeriesId {
 	sort.SliceStable(array, func(i, j int) bool {
-		if array[i].Id < array[j].Id && array[i].Time < array[j].Time {
+		if array[i].Id <= array[j].Id && array[i].Time <= array[j].Time {
 			return true
 		}
 		return false
@@ -177,7 +207,8 @@ func ArraySortAndRemoveDuplicate(array []utils.SeriesId) []utils.SeriesId {
 	array = ArrayRemoveDuplicate(array)
 	return array
 }
-func FuzzyQueryGramQmaxTrie(rootFuzzyTrie *gramIndex.LogTreeNode, searchStr string, dicRootNode *gramClvc.TrieTreeNode, indexRootNode *gramIndex.IndexTreeNode, qmin int, qmax int, distance int) []utils.SeriesId {
+func FuzzyQueryGramQmaxTrie(rootFuzzyTrie *gramIndex.LogTreeNode, searchStr string, dicRootNode *gramClvc.TrieTreeNode,
+	indexRoots *mpTrie.SearchTreeNode, qmin int, qmax int, distance int, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []utils.SeriesId {
 	resArrFuzzy := make([]utils.SeriesId, 0)
 	if len(searchStr) > qmax+distance {
 		fmt.Println("error:查询语句长度大于qmax+distance,无法匹配结果")
@@ -185,10 +216,21 @@ func FuzzyQueryGramQmaxTrie(rootFuzzyTrie *gramIndex.LogTreeNode, searchStr stri
 	}
 	collectionMinStr := make(map[string]FuzzyEmpty)
 	QmaxTrieListPath(rootFuzzyTrie, "", collectionMinStr, searchStr, distance, qmin)
-	for key, _ := range collectionMinStr {
-		arrayNew := gramMatchQuery.MatchSearch(key, dicRootNode, indexRootNode, qmin)
+	for key, _ := range collectionMinStr { //(key, dicRootNode, indexRootNode, qmin)
+		arrayNew := gramMatchQuery.MatchSearch(key, dicRootNode, indexRoots, qmin, buffer, addrCache, invertedCache)
 		resArrFuzzy = append(resArrFuzzy, arrayNew...)
 	}
 	resArrFuzzy = ArraySortAndRemoveDuplicate(resArrFuzzy)
 	return resArrFuzzy
-}
+}*/
+
+/*func FuzzyQueryGramQmaxTries(rootFuzzyTrie *gramIndex.LogTreeNode, searchStr string, dicRootNode *gramClvc.TrieTreeNode,
+	indexRoots []*decode.SearchTreeNode, qmin int, qmax int, distance int,
+	buffer []byte, addrCache *cache.AddrCache, invertedCache *cache.InvertedCache) []utils.SeriesId {
+	var resArr = make([]utils.SeriesId, 0)
+	for i := 0; i < len(indexRoots); i++ {
+		resArr = append(resArr, FuzzyQueryGramQmaxTrie(rootFuzzyTrie, searchStr, dicRootNode,
+			indexRoots, qmin, qmax, distance, buffer, addrCache, invertedCache)...)
+	}
+	return resArr
+}*/

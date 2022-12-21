@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package tokenClvl
 
 import (
@@ -37,7 +38,7 @@ func PrintInverted_index(node *tokenIndex.IndexTreeNode) {
 	}
 }
 
-func RemoveInvertedIndex(indexlist tokenIndex.Inverted_index, delsid utils.SeriesId, delpos []uint16) {
+func RemoveInvertedIndex(indexlist utils.Inverted_index, delsid utils.SeriesId, delpos []uint16) {
 	if indexlist == nil {
 		// map is nil
 		return
@@ -73,7 +74,7 @@ func RemoveInvertedIndex(indexlist tokenIndex.Inverted_index, delsid utils.Serie
 	}
 }
 
-func SuffixRemoveInvertedIndex(indexlist tokenIndex.Inverted_index, delsid utils.SeriesId, delpos []uint16) {
+func SuffixRemoveInvertedIndex(indexlist utils.Inverted_index, delsid utils.SeriesId, delpos []uint16) {
 	if indexlist == nil {
 		return
 	}

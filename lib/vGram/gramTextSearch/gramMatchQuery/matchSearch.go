@@ -16,227 +16,191 @@ limitations under the License.
 package gramMatchQuery
 
 import (
-	"sort"
-
+	"fmt"
+	"github.com/openGemini/openGemini/lib/mpTrie"
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
 	"github.com/openGemini/openGemini/lib/vGram/gramIndex"
+	"sort"
+	"time"
 )
 
-func MatchSearch(searchStr string, root *gramClvc.TrieTreeNode, indexRoot *gramIndex.IndexTreeNode, qmin int) []utils.SeriesId {
-
-	//start1 := time.Now().UnixMicro()
+func MatchSearch(searchStr string, root *gramClvc.TrieTreeNode, indexRoots *mpTrie.SearchTreeNode, qmin int, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []utils.SeriesId {
+	/*var vgMap = make(map[uint16]string)
+	gramIndex.VGConsBasicIndex(root, qmin, searchStr, vgMap)
+	var resArr = make([]utils.SeriesId, 0) //todo
+	for i := 0; i < len(indexRoots); i++ {
+		resArr = append(resArr, MatchSearch2(vgMap, indexRoots[i], buffer, addrCache, invertedCache)...)
+	}
+	return resArr*/
 	var vgMap = make(map[uint16]string)
 	gramIndex.VGConsBasicIndex(root, qmin, searchStr, vgMap)
-	//fmt.Println(vgMap)
-
-	var sortSumInvertList = make([]SortKey, 0)
-	for x := range vgMap {
-		gram := vgMap[x]
-		if gram != "" {
-			var invertIndex gramIndex.Inverted_index
-			var indexNode *gramIndex.IndexTreeNode
-			var invertIndex1 gramIndex.Inverted_index
-			var invertIndex2 gramIndex.Inverted_index
-			var invertIndex3 gramIndex.Inverted_index
-			invertIndex1, indexNode = SearchInvertedListFromCurrentNode(gram, indexRoot, 0, invertIndex1, indexNode)
-			invertIndex = DeepCopy(invertIndex1)
-			invertIndex2 = SearchInvertedListFromChildrensOfCurrentNode(indexNode, nil)
-			if indexNode != nil && len(indexNode.AddrOffset()) > 0 {
-				invertIndex3 = TurnAddr2InvertLists(indexNode.AddrOffset(), invertIndex3)
-			}
-			invertIndex = MergeMapsInvertLists(invertIndex2, invertIndex)
-			invertIndex = MergeMapsInvertLists(invertIndex3, invertIndex)
-			sortSumInvertList = append(sortSumInvertList, NewSortKey(x, len(invertIndex), gram, invertIndex))
-		}
-	}
-	sort.SliceStable(sortSumInvertList, func(i, j int) bool {
-		if sortSumInvertList[i].sizeOfInvertedList < sortSumInvertList[j].sizeOfInvertedList {
-			return true
-		}
-		return false
-	})
-
 	var resArr = make([]utils.SeriesId, 0)
-	var preSeaPosition uint16 = 0
-	var preInverPositionDis = make([]PosList, 0)
-	var nowInverPositionDis = make([]PosList, 0)
-	for m := 0; m < len(sortSumInvertList); m++ {
-		gramArr := sortSumInvertList[m].gram
-		var nowSeaPosition uint16
-		if gramArr != "" {
-			nowSeaPosition = sortSumInvertList[m].offset
-			var invertIndex gramIndex.Inverted_index = nil
-			invertIndex = sortSumInvertList[m].invertedIndex
-			if invertIndex == nil {
-				return nil
+	resArr = append(resArr, MatchSearch2(vgMap, indexRoots, buffer, addrCache, invertedCache)...)
+	return resArr
+}
+
+func MatchSearch2(vgMap map[uint16]string, indexRoot *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []utils.SeriesId {
+	start1 := time.Now().UnixMicro()
+	if len(vgMap) == 1 {
+		gram := vgMap[0]
+		var invertIndexOffset uint64
+		var addrOffset uint64
+		var indexNode *mpTrie.SearchTreeNode
+		var invertIndex1 utils.Inverted_index
+		arrMap := make(map[utils.SeriesId]struct{})
+		invertIndexOffset, addrOffset, indexNode = SearchNodeAddrFromPersistentIndexTree(gram, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
+		if indexNode.Invtdlen() > 0 {
+			invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, buffer, invertedCache)
+		}
+		arrMap = mpTrie.MergeMapsKeys(invertIndex1, arrMap)
+		arrMap = mpTrie.SearchInvertedListFromChildrensOfCurrentNode2(indexNode, arrMap, buffer, addrCache, invertedCache)
+		if indexNode.Addrlen() > 0 {
+			addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, buffer, addrCache)
+			if indexNode != nil && len(addrOffsets) > 0 {
+				arrMap = mpTrie.TurnAddr2InvertLists2(addrOffsets, buffer, invertedCache, arrMap)
 			}
-			if m == 0 {
-				for sid := range invertIndex {
-					preInverPositionDis = append(preInverPositionDis, NewPosList(sid, make([]uint16, len(invertIndex[sid]), len(invertIndex[sid]))))
-					nowInverPositionDis = append(nowInverPositionDis, NewPosList(sid, invertIndex[sid]))
-					resArr = append(resArr, sid)
+		}
+		end1 := time.Now().UnixMicro()
+		fmt.Println("match cost time:", (end1-start1)/1000)
+		return mpTrie.MapKeyToSlices(arrMap)
+	} else {
+		var sortSumInvertList = make([]SortKey, 0)
+		for x := range vgMap {
+			gram := vgMap[x]
+			if gram != "" {
+				freq := SearchInvertedListLengthFromGram(gram, indexRoot, 0, 1)
+				sortSumInvertList = append(sortSumInvertList, NewSortKey(x, freq, gram))
+			}
+		}
+		sort.SliceStable(sortSumInvertList, func(i, j int) bool {
+			if sortSumInvertList[i].sizeOfInvertedList < sortSumInvertList[j].sizeOfInvertedList {
+				return true
+			}
+			return false
+		})
+		end21 := time.Now().UnixMicro()
+		var sum1 uint64 = 0
+		var sum2 uint64 = 0
+		var sum3 uint64 = 0
+		var sum4 uint64 = 0
+		var resArr = make(utils.Inverted_index, 0)
+		var prePos uint16 = 0
+		var nowPos uint16 = 0
+		for m := 0; m < len(sortSumInvertList); m++ {
+			gramArr := sortSumInvertList[m].gram
+			if gramArr != "" {
+				invertIndexes := make([]utils.Inverted_index, 3)
+				var invertIndexOffset uint64
+				var addrOffset uint64
+				var indexNode *mpTrie.SearchTreeNode
+				var invertIndex1 utils.Inverted_index
+				var invertIndex2 utils.Inverted_index
+				var invertIndex3 utils.Inverted_index
+				start21 := time.Now().UnixMicro()
+				invertIndexOffset, addrOffset, indexNode = SearchNodeAddrFromPersistentIndexTree(gramArr, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
+				if indexNode.Invtdlen() > 0 {
+					invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, buffer, invertedCache)
 				}
-			} else {
-				for j := 0; j < len(resArr); j++ {
-					findFlag := false
-					sid := resArr[j]
-					if _, ok := invertIndex[sid]; ok {
-						nowInverPositionDis[j] = NewPosList(sid, invertIndex[sid])
-						for z1 := 0; z1 < len(preInverPositionDis[j].posArray); z1++ {
-							z1Pos := preInverPositionDis[j].posArray[z1]
-							for z2 := 0; z2 < len(nowInverPositionDis[j].posArray); z2++ {
-								z2Pos := nowInverPositionDis[j].posArray[z2]
-								if nowSeaPosition-preSeaPosition == z2Pos-z1Pos {
-									findFlag = true
-									break
+				end22 := time.Now().UnixMicro()
+				sum1 += uint64(end22 - start21)
+				start22 := time.Now().UnixMicro()
+				invertIndex2 = mpTrie.SearchInvertedListFromChildrensOfCurrentNode(indexNode, invertIndex2, buffer, addrCache, invertedCache)
+				end23 := time.Now().UnixMicro()
+				sum2 += uint64(end23 - start22)
+				start23 := time.Now().UnixMicro()
+				if indexNode.Addrlen() > 0 {
+					addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, buffer, addrCache)
+					if indexNode != nil && len(addrOffsets) > 0 {
+						invertIndex3 = mpTrie.TurnAddr2InvertLists(addrOffsets, buffer, invertedCache)
+					}
+				}
+				end24 := time.Now().UnixMicro()
+				sum3 += uint64(end24 - start23)
+				start24 := time.Now().UnixMicro()
+				invertIndexes[0] = invertIndex1
+				invertIndexes[1] = invertIndex2
+				invertIndexes[2] = invertIndex3
+				if invertIndexes == nil || (len(invertIndexes[0]) == 0 && len(invertIndexes[1]) == 0 && len(invertIndexes[2]) == 0) {
+					return nil
+				}
+				if m == 0 {
+					resArr = mpTrie.MergeMapsThreeInvertLists(invertIndexes)
+					prePos = sortSumInvertList[m].offset
+				} else {
+					nowPos = sortSumInvertList[m].offset
+					queryDis := nowPos - prePos
+					for sid, posList1 := range resArr {
+						findFlag := false
+						for i := 0; i < 3; i++ {
+							if _, ok := invertIndexes[i][sid]; ok {
+								posList2 := invertIndexes[i][sid]
+								for z1 := 0; z1 < len(posList1); z1++ {
+									z1Pos := posList1[z1]
+									for z2 := 0; z2 < len(posList2); z2++ {
+										z2Pos := posList2[z2]
+										if queryDis == z2Pos-z1Pos {
+											findFlag = true
+											break
+										}
+									}
+									if findFlag == true {
+										break
+									}
 								}
 							}
 							if findFlag == true {
 								break
 							}
 						}
-					}
-					if findFlag == false {
-						resArr = append(resArr[:j], resArr[j+1:]...)
-						preInverPositionDis = append(preInverPositionDis[:j], preInverPositionDis[j+1:]...)
-						nowInverPositionDis = append(nowInverPositionDis[:j], nowInverPositionDis[j+1:]...)
-						j-- //删除后重新指向，防止丢失元素判断
+						if findFlag == false {
+							delete(resArr, sid)
+						}
 					}
 				}
+				end25 := time.Now().UnixMicro()
+				sum4 += uint64(end25 - start24)
 			}
-			preSeaPosition = nowSeaPosition
-			copy(preInverPositionDis, nowInverPositionDis)
 		}
+		fmt.Println("sort and freq:", (end21-start1)/1000)
+		fmt.Println("sum1:", sum1/1000)
+		fmt.Println("sum2:", sum2/1000)
+		fmt.Println("sum3:", sum3/1000)
+		fmt.Println("sum4:", sum4/1000)
+		end2 := time.Now().UnixMicro()
+		fmt.Println("match cost time:", (end2-start1)/1000)
+		return mpTrie.MapToSlices(resArr)
 	}
-	sort.SliceStable(resArr, func(i, j int) bool {
-		if resArr[i].Id < resArr[j].Id && resArr[i].Time < resArr[j].Time {
-			return true
-		}
-		return false
-	})
-	//end1 := time.Now().UnixMicro()
-	//fmt.Println("===============clv")
-	//fmt.Println(float64(end1-start1)/1000,"ms")
-	return resArr
 }
 
-func SearchInvertedListFromCurrentNode(gramArr string, indexRoot *gramIndex.IndexTreeNode, i int, invertIndex1 gramIndex.Inverted_index, indexNode *gramIndex.IndexTreeNode) (gramIndex.Inverted_index, *gramIndex.IndexTreeNode) {
+func SearchNodeAddrFromPersistentIndexTree(gramArr string, indexRoot *mpTrie.SearchTreeNode, i int, invertIndexOffset uint64, addrOffset uint64, indexNode *mpTrie.SearchTreeNode) (uint64, uint64, *mpTrie.SearchTreeNode) {
 	if indexRoot == nil {
-		return invertIndex1, indexNode
+		return invertIndexOffset, addrOffset, indexNode
 	}
-	if i < len(gramArr)-1 && indexRoot.Children()[gramArr[i]] != nil {
-		invertIndex1, indexNode = SearchInvertedListFromCurrentNode(gramArr, indexRoot.Children()[gramArr[i]], i+1, invertIndex1, indexNode)
+	if i < len(gramArr)-1 && indexRoot.Children()[int(gramArr[i])] != nil {
+		invertIndexOffset, addrOffset, indexNode = SearchNodeAddrFromPersistentIndexTree(gramArr, indexRoot.Children()[int(gramArr[i])], i+1, invertIndexOffset, addrOffset, indexNode)
 	}
-	if i == len(gramArr)-1 && indexRoot.Children()[gramArr[i]] != nil {
-		invertIndex1 = indexRoot.Children()[gramArr[i]].InvertedIndex()
-		indexNode = indexRoot.Children()[gramArr[i]]
+	if i == len(gramArr)-1 && indexRoot.Children()[int(gramArr[i])] != nil {
+		if indexRoot.Children()[int(gramArr[i])].Invtdlen() > 0 {
+			invertIndexOffset = indexRoot.Children()[int(gramArr[i])].InvtdInfo().IvtdblkOffset()
+		}
+		if indexRoot.Children()[int(gramArr[i])].Addrlen() > 0 {
+			addrOffset = indexRoot.Children()[int(gramArr[i])].AddrInfo().AddrblkOffset()
+		}
+		indexNode = indexRoot.Children()[int(gramArr[i])]
 	}
-	return invertIndex1, indexNode
+	return invertIndexOffset, addrOffset, indexNode
 }
 
-func SearchInvertedListFromChildrensOfCurrentNode(indexNode *gramIndex.IndexTreeNode, invertIndex2 gramIndex.Inverted_index) gramIndex.Inverted_index {
-	if indexNode != nil {
-		for _, child := range indexNode.Children() {
-			if len(child.InvertedIndex()) > 0 {
-				invertIndex2 = MergeMapsInvertLists(child.InvertedIndex(), invertIndex2)
-			}
-			if len(child.AddrOffset()) > 0 {
-				var invertIndex3 = TurnAddr2InvertLists(child.AddrOffset(), nil)
-				invertIndex2 = MergeMapsInvertLists(invertIndex3, invertIndex2)
-			}
-			invertIndex2 = SearchInvertedListFromChildrensOfCurrentNode(child, invertIndex2)
-		}
+func SearchInvertedListLengthFromGram(gramArr string, indexRoot *mpTrie.SearchTreeNode, i int, freq int) int {
+	if indexRoot == nil {
+		return freq
 	}
-	return invertIndex2
-}
-
-func TurnAddr2InvertLists(addrOffset map[*gramIndex.IndexTreeNode]uint16, invertIndex3 gramIndex.Inverted_index) gramIndex.Inverted_index {
-	var res gramIndex.Inverted_index
-	for addr, offset := range addrOffset {
-		invertIndex3 = make(map[utils.SeriesId][]uint16)
-		for key, value := range addr.InvertedIndex() {
-			list := make([]uint16, 0)
-			for i := 0; i < len(value); i++ {
-				list = append(list, value[i]+offset)
-			}
-			invertIndex3[key] = list
-		}
-		res = MergeMapsTwoInvertLists(invertIndex3, res)
+	if i < len(gramArr)-1 && indexRoot.Children()[int(gramArr[i])] != nil {
+		freq = SearchInvertedListLengthFromGram(gramArr, indexRoot.Children()[int(gramArr[i])], i+1, freq)
 	}
-	return res
-}
-
-func MergeMapsInvertLists(map1 map[utils.SeriesId][]uint16, map2 map[utils.SeriesId][]uint16) map[utils.SeriesId][]uint16 {
-	if len(map2) > 0 {
-		for sid1, list1 := range map1 {
-			if list2, ok := map2[sid1]; !ok {
-				map2[sid1] = list1
-			} else {
-				list2 = append(list2, list1...)
-				list2 = UniqueArr(list2)
-				sort.Slice(list2, func(i, j int) bool { return list2[i] < list2[j] })
-				map2[sid1] = list2
-			}
-		}
-	} else {
-		map2 = DeepCopy(map1)
+	if i == len(gramArr)-1 && indexRoot.Children()[int(gramArr[i])] != nil {
+		freq = indexRoot.Children()[int(gramArr[i])].Freq()
 	}
-	return map2
-}
-
-func UniqueArr(m []uint16) []uint16 {
-	d := make([]uint16, 0)
-	tempMap := make(map[uint16]bool, len(m))
-	for _, v := range m {
-		if tempMap[v] == false {
-			tempMap[v] = true
-			d = append(d, v)
-		}
-	}
-	return d
-}
-
-func DeepCopy(src map[utils.SeriesId][]uint16) map[utils.SeriesId][]uint16 {
-	dst := make(map[utils.SeriesId][]uint16)
-	for key, value := range src {
-		list := make([]uint16, 0)
-		for i := 0; i < len(value); i++ {
-			list = append(list, value[i])
-		}
-		dst[key] = list
-	}
-	return dst
-}
-
-func MergeMapsTwoInvertLists(map1 map[utils.SeriesId][]uint16, map2 map[utils.SeriesId][]uint16) map[utils.SeriesId][]uint16 {
-	if len(map1) == 0 {
-		return map2
-	} else if len(map2) == 0 {
-		return map1
-	} else if len(map1) < len(map2) {
-		for sid1, list1 := range map1 {
-			if list2, ok := map2[sid1]; !ok {
-				map2[sid1] = list1
-			} else {
-				list2 = append(list2, list1...)
-				list2 = UniqueArr(list2)
-				sort.Slice(list2, func(i, j int) bool { return list2[i] < list2[j] })
-				map2[sid1] = list2
-			}
-		}
-		return map2
-	} else {
-		for sid1, list1 := range map2 {
-			if list2, ok := map1[sid1]; !ok {
-				map1[sid1] = list1
-			} else {
-				list2 = append(list2, list1...)
-				list2 = UniqueArr(list2)
-				sort.Slice(list2, func(i, j int) bool { return list2[i] < list2[j] })
-				map1[sid1] = list2
-			}
-		}
-		return map1
-	}
+	return freq
 }

@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package tokenClvl
 
 import (
@@ -86,7 +87,7 @@ func GenerateQminIndexTree(logs map[utils.SeriesId]string, qmin int) *tokenIndex
 func GenTokenTw(trie *tokenIndex.IndexTree, sampleStringOfW map[utils.SeriesId]string, qmin int) (*tokenIndex.IndexTree, map[utils.SeriesId]string) {
 	logMap := make(map[utils.SeriesId]string)
 	treeW := tokenIndex.NewIndexTrie08(trie.Qmin())
-	var tokenVGmaps = make(map[string]tokenIndex.Inverted_index)
+	var tokenVGmaps = make(map[string]utils.Inverted_index)
 	for key, value := range sampleStringOfW {
 		vgMap := make(map[uint16][]string)
 		tsid := key.Id

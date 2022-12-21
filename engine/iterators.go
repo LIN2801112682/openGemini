@@ -1368,6 +1368,7 @@ func (s *shard) newSeriesCursor(ctx *idKeyCursorContext, span *tracing.Span, sch
 	tagSet *tsi.TagSetInfo, idx int) (*seriesCursor, error) {
 	var err error
 	sid := tagSet.IDs[idx]
+	filterTime := tagSet.Timestamps[idx]
 	filter := tagSet.Filters[idx]
 	ptTags := &(tagSet.TagsVec[idx])
 
@@ -1395,7 +1396,7 @@ func (s *shard) newSeriesCursor(ctx *idKeyCursorContext, span *tracing.Span, sch
 	if err != nil {
 		return nil, err
 	}
-
+	tsmCursor.filterTime = filterTime
 	// only if tsm or mem table have data, we will create series cursor
 	if tsmCursor != nil || (memTableRecord != nil && memTableRecord.RowNums() > 0) {
 		seriesCursor := getSeriesKeyCursor()
@@ -1671,6 +1672,7 @@ type tsmMergeCursor struct {
 	outOrderRecIter recordIter
 	recordPool      *record.CircularRecordPool
 	limitFirstTime  int64
+	filterTime      []int64
 }
 
 func NewTsmMergeCursor(ctx *idKeyCursorContext, sid uint64, filter influxql.Expr, tags *influx.PointTags, _ *tracing.Span) (*tsmMergeCursor, error) {
@@ -1833,7 +1835,7 @@ func AddLocationsWithFirstTime(l *immutable.LocationCursor, files immutable.Tabl
 
 func (c *tsmMergeCursor) readData(orderLoc bool, dst *record.Record) (*record.Record, error) {
 	c.ctx.decs.Set(c.ctx.decs.Ascending, c.ctx.tr, c.onlyFirstOrLast, c.ops)
-	filterOpts := immutable.NewFilterOpts(c.filter, c.ctx.m, c.ctx.filterFieldsIdx, c.ctx.filterTags, c.tags)
+	filterOpts := immutable.NewFilterOpts(c.filter, c.ctx.m, c.ctx.filterFieldsIdx, c.ctx.filterTags, c.tags, c.filterTime)
 	if orderLoc {
 		return c.locations.ReadData(filterOpts, dst)
 	}
@@ -1959,7 +1961,7 @@ func (c *tsmMergeCursor) FirstTimeOutOfOrderInit() error {
 	//isFirst := true
 	var outRec *record.Record
 	c.ctx.decs.Set(c.ctx.decs.Ascending, c.ctx.tr, c.onlyFirstOrLast, c.ops)
-	filterOpts := immutable.NewFilterOpts(c.filter, c.ctx.m, c.ctx.filterFieldsIdx, c.ctx.filterTags, c.tags)
+	filterOpts := immutable.NewFilterOpts(c.filter, c.ctx.m, c.ctx.filterFieldsIdx, c.ctx.filterTags, c.tags, nil)
 	dst := record.NewRecordBuilder(c.ctx.schema)
 	rec, err := c.outOfOrderLocations.ReadOutOfOrderMeta(filterOpts, dst)
 	if err != nil {

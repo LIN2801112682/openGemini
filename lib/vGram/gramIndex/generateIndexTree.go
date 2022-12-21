@@ -26,7 +26,7 @@ import (
 // According to a batch of log data, the VG is divided by the gramClvc tree, and the gramIndex item set is constructed.
 func GenerateIndexTree(logs []utils.LogSeries, qmin int, qmax int, logTreeMax int, root *gramClvc.TrieTreeNode) (*IndexTree, *IndexTreeNode, *LogTree) {
 	indexTree := NewIndexTree(qmin, qmax)
-	var vgMaps = make(map[string]Inverted_index)
+	var vgMaps = make(map[string]utils.Inverted_index)
 	logTree := NewLogTree(logTreeMax)
 	for i := range logs {
 		tsid := logs[i].Tsid
@@ -62,7 +62,7 @@ func GenerateIndexTree(logs []utils.LogSeries, qmin int, qmax int, logTreeMax in
 	return indexTree, indexTree.root, logTree
 }
 
-func WriteToVgMaps(vgMap map[uint16]string, sid utils.SeriesId, vgMaps VgMaps) VgMaps {
+func WriteToVgMaps(vgMap map[uint16]string, sid utils.SeriesId, vgMaps utils.VgMaps) utils.VgMaps {
 	var keys = []uint16{}
 	for key := range vgMap {
 		keys = append(keys, key)
@@ -83,7 +83,7 @@ func WriteToVgMaps(vgMap map[uint16]string, sid utils.SeriesId, vgMaps VgMaps) V
 		} else {
 			posArray := []uint16{}
 			posArray = append(posArray, position)
-			var invert_index Inverted_index = make(map[utils.SeriesId][]uint16)
+			var invert_index utils.Inverted_index = make(map[utils.SeriesId][]uint16)
 			invert_index[sid] = posArray
 			vgMaps[gram] = invert_index
 		}

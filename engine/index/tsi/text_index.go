@@ -18,7 +18,6 @@ package tsi
 
 import (
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/openGemini/openGemini/lib/clvIndex"
@@ -38,7 +37,7 @@ type TextIndex struct {
 func NewTextIndex(opts *Options) (*TextIndex, error) {
 	textIndex := &TextIndex{
 		FieldKeys: make(map[string][]string),
-		ClvIndex:  clvIndex.NewCLVIndex(clvIndex.VTOKEN),
+		ClvIndex:  clvIndex.NewCLVIndex(clvIndex.VGRAM),
 	}
 	str := make([]string, 1)
 	str[0] = "logs"
@@ -106,9 +105,6 @@ func Or(s1, s2 []utils.SeriesId) []utils.SeriesId {
 			s1 = append(s1, s2[i])
 		}
 	}
-	sort.Slice(s1, func(i, j int) bool {
-		return s1[i].Id < s2[i].Id
-	})
 	return s1
 }
 
@@ -209,7 +205,7 @@ func (idx *TextIndex) Search(primaryIndex PrimaryIndex, span *tracing.Span, name
 	fmt.Println(len(clvSids))
 	fmt.Println("clvSearch-time: ")
 	fmt.Println(float64(end2-start2)/1000, "ms")
-	fmt.Println("pro-time: ")
+	fmt.Println("pro-res-time: ")
 	fmt.Println(float64(end3-start3)/1000, "ms")
 	fmt.Println("all-time: ")
 	fmt.Println(float64(end-start)/1000, "ms")

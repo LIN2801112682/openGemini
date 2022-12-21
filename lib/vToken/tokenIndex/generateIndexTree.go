@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package tokenIndex
 
 import (
@@ -24,10 +25,9 @@ import (
 	"github.com/openGemini/openGemini/lib/vToken/tokenDic/tokenClvc"
 )
 
-// 根据一批日志数据通过字典树划分VG，构建索引项集
 func GenerateIndexTree(logs []utils.LogSeries, qmin int, qmax int, root *tokenClvc.TrieTreeNode) (*IndexTree, *IndexTreeNode) {
 	indexTree := NewIndexTree(qmin, qmax)
-	var vgMaps = make(map[string]Inverted_index)
+	var vgMaps = make(map[string]utils.Inverted_index)
 	for i := range logs {
 		tsid := logs[i].Tsid
 		timeStamp := logs[i].TimeStamp
@@ -58,7 +58,7 @@ func GenerateIndexTree(logs []utils.LogSeries, qmin int, qmax int, root *tokenCl
 	return indexTree, indexTree.root
 }
 
-func WriteToVgMaps(vgMap map[uint16][]string, sid utils.SeriesId, vgMaps VgMaps) VgMaps {
+func WriteToVgMaps(vgMap map[uint16][]string, sid utils.SeriesId, vgMaps utils.VgMaps) utils.VgMaps {
 	var keys = make([]uint16, 0)
 	for key := range vgMap {
 		keys = append(keys, key)
@@ -83,7 +83,7 @@ func WriteToVgMaps(vgMap map[uint16][]string, sid utils.SeriesId, vgMaps VgMaps)
 		} else {
 			posArray := make([]uint16, 0)
 			posArray = append(posArray, position)
-			var invert_index Inverted_index = make(map[utils.SeriesId][]uint16)
+			var invert_index utils.Inverted_index = make(map[utils.SeriesId][]uint16)
 			invert_index[sid] = posArray
 			vgMaps[tokenStr] = invert_index
 		}

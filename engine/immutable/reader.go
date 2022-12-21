@@ -786,16 +786,18 @@ type FilterOptions struct {
 	fieldsIdx  []int    // field index in schema
 	filterTags []string // filter tag name
 	pointTags  *influx.PointTags
+	filterTime []int64
 }
 
 func NewFilterOpts(cond influxql.Expr, filterMap map[string]interface{}, fieldsIdx []int, idTags []string,
-	tags *influx.PointTags) *FilterOptions {
+	tags *influx.PointTags, filterTime []int64) *FilterOptions {
 	return &FilterOptions{
 		cond:       cond,
 		filtersMap: filterMap,
 		fieldsIdx:  fieldsIdx,
 		filterTags: idTags,
 		pointTags:  tags,
+		filterTime: filterTime,
 	}
 }
 
@@ -1065,6 +1067,10 @@ func (l *Location) readData(filterOpts *FilterOptions, dst *record.Record) (*rec
 			rec = FilterByField(rec, filterOpts.filtersMap, filterOpts.cond, filterOpts.fieldsIdx,
 				filterOpts.filterTags, filterOpts.pointTags)
 		}
+		// filter by fiterTime
+		if rec != nil {
+			rec = FilterByFilterTime(rec, filterOpts.filterTime)
+		}
 	}
 
 	return rec, nil
@@ -1120,6 +1126,35 @@ func FilterByTimeDescend(rec *record.Record, tr record.TimeRange) *record.Record
 	}
 	// all data out of time ranges, continue to read data
 	return nil
+}
+
+func AddRecordToOther(dstRecord, srcRecord *record.Record) {
+	for i := range srcRecord.ColVals {
+		dstRecord.ColVals[i].AppendColVal(&srcRecord.ColVals[i], dstRecord.Schema[i].Type, 0, srcRecord.RowNums())
+	}
+}
+
+func FilterByFilterTime(rec *record.Record, filterTime []int64) *record.Record {
+	lenFilter := len(filterTime)
+	if lenFilter == 0 {
+		return rec
+	}
+	times := rec.Times()
+	startTime := times[0]
+	endTime := times[len(times)-1]
+
+	newRec := record.Record{}
+	for i := range filterTime {
+		if filterTime[i] < startTime || filterTime[i] > endTime {
+			continue
+		}
+		index := record.GetTimeRangeStartIndex(times, 0, filterTime[i])
+		sliceRec := record.Record{}
+		sliceRec.SliceFromRecord(rec, index, index+1)
+		AddRecordToOther(&newRec, &sliceRec)
+	}
+	// all data out of time ranges, continue to read data
+	return &newRec
 }
 
 func FilterByField(rec *record.Record, filterMap map[string]interface{}, con influxql.Expr, idField []int, idTags []string, tags *influx.PointTags) *record.Record {

@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 package tokenClvl
 
 import (
@@ -71,7 +72,7 @@ func (clvlDic *CLVLDic) GenerateClvlDictionaryTree(logs map[utils.SeriesId]strin
 			for sidindex := 0; sidindex < len(sidSort); sidindex++ {
 				oneSid := sidSort[sidindex]
 				oneArray := indexlist[oneSid]
-				nextgram := make(map[string]tokenIndex.Inverted_index, 0)
+				nextgram := make(map[string]utils.Inverted_index, 0)
 				keys := make([]string, 0)
 				var evaluateResult bool
 				var cNode, suffixNode *tokenIndex.IndexTreeNode

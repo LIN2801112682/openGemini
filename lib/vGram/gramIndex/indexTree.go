@@ -16,6 +16,8 @@ limitations under the License.
 package gramIndex
 
 import (
+	"fmt"
+	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
 )
 
@@ -26,36 +28,36 @@ type IndexTree struct {
 	root *IndexTreeNode
 }
 
-func (i *IndexTree) Qmin() int {
-	return i.qmin
+func (tree *IndexTree) Qmin() int {
+	return tree.qmin
 }
 
-func (i *IndexTree) SetQmin(qmin int) {
-	i.qmin = qmin
+func (tree *IndexTree) SetQmin(qmin int) {
+	tree.qmin = qmin
 }
 
-func (i *IndexTree) Qmax() int {
-	return i.qmax
+func (tree *IndexTree) Qmax() int {
+	return tree.qmax
 }
 
-func (i *IndexTree) SetQmax(qmax int) {
-	i.qmax = qmax
+func (tree *IndexTree) SetQmax(qmax int) {
+	tree.qmax = qmax
 }
 
-func (i *IndexTree) Cout() int {
-	return i.cout
+func (tree *IndexTree) Cout() int {
+	return tree.cout
 }
 
-func (i *IndexTree) SetCout(cout int) {
-	i.cout = cout
+func (tree *IndexTree) SetCout(cout int) {
+	tree.cout = cout
 }
 
-func (i *IndexTree) Root() *IndexTreeNode {
-	return i.root
+func (tree *IndexTree) Root() *IndexTreeNode {
+	return tree.root
 }
 
-func (i *IndexTree) SetRoot(root *IndexTreeNode) {
-	i.root = root
+func (tree *IndexTree) SetRoot(root *IndexTreeNode) {
+	tree.root = root
 }
 
 func NewIndexTree(qmin int, qmax int) *IndexTree {
@@ -77,7 +79,7 @@ func NewIndexTrie(qmin int) *IndexTree {
 }
 
 // Insert gram into IndexTree  position:The starting position of the strat in the statement
-func (tree *IndexTree) InsertIntoIndexTree(gram string, inverted_index Inverted_index) *IndexTreeNode {
+func (tree *IndexTree) InsertIntoIndexTree(gram string, inverted_index utils.Inverted_index) *IndexTreeNode {
 	node := tree.root
 	var addr *IndexTreeNode
 	var childIndex int8 = -1
@@ -89,6 +91,7 @@ func (tree *IndexTree) InsertIntoIndexTree(gram string, inverted_index Inverted_
 			node = currentNode
 		} else {
 			node = node.children[uint8(childIndex)]
+			node.frequency++
 		}
 		if i == len(gram)-1 { //Leaf node, need to hook up linkedList
 			node.isleaf = true
@@ -113,7 +116,7 @@ func (tree *IndexTree) InsertOnlyGramIntoIndexTree(gramSubs []SubGramOffset, add
 				node = currentNode
 			} else {
 				node = node.children[uint8(childIndex)]
-				//node.frequency++
+				node.frequency++
 			}
 			if i == len(gram)-1 { //Leaf node, need to hook up linkedList
 				node.isleaf = true
@@ -138,7 +141,7 @@ func (tree *IndexTree) InsertStringIntoIndexTree(gram string) {
 			node = currentNode
 		} else { //There is this node in the ChildrenMap, so childrenIndex is the position of the node in the ChildrenMap
 			node = node.children[uint8(childIndex)]
-			//node.frequency++
+			node.frequency++
 		}
 		if i >= qmin-1 { //As long as the gram length is greater than qmin - 1, it is a leaf node
 			node.isleaf = true
@@ -150,53 +153,6 @@ func (tree *IndexTree) PrintIndexTree() {
 	tree.root.PrintIndexTreeNode(0)
 }
 
-// Calculate the length of each invertedList
-var Res []int
-var Rea []int
-
-func (root *IndexTreeNode) FixInvertedIndexSize() {
-	for _, child := range root.children {
-		if child.isleaf == true && len(child.invertedIndex) > 0 {
-			Res = append(Res, len(child.invertedIndex)) //The append function must be used, and i cannot be used for variable addition, because there is no make initialization
-		}
-		child.FixInvertedIndexSize()
-	}
-}
-
-func (root *IndexTreeNode) FixInvertedAddrSize() {
-	for _, child := range root.children {
-		if child.isleaf == true && len(child.addrOffset) > 0 {
-			Rea = append(Rea, len(child.addrOffset)) //The append function must be used, and i cannot be used for variable addition, because there is no make initialization
-		}
-		child.FixInvertedAddrSize()
-	}
-}
-
-// Calculate the length of each gram
-var Grams []string
-var temp string
-var SumInvertLen = 0
-
-func (root *IndexTreeNode) SearchGramsFromIndexTree() {
-	if len(root.children) == 0 {
-		return
-	}
-	for _, child := range root.children {
-		if child != nil {
-			temp += child.data
-			if child.isleaf == true {
-				//fmt.Println(temp)
-				SumInvertLen += len(temp)
-				Grams = append(Grams, temp)
-			}
-			child.SearchGramsFromIndexTree()
-			if len(temp) > 0 {
-				temp = temp[0 : len(temp)-1]
-			}
-		}
-	}
-}
-
 // regexTestCLVL need
 func (indextree *IndexTree) ToDicTree() *gramClvc.TrieTree {
 	r := indextree.root.ConvertNode()
@@ -206,12 +162,40 @@ func (indextree *IndexTree) ToDicTree() *gramClvc.TrieTree {
 }
 
 // regexTestCLVL need
-func (indextreenode *IndexTreeNode) ConvertNode() *gramClvc.TrieTreeNode {
-	node := gramClvc.NewTrieTreeNode(indextreenode.data)
-	node.SetIsleaf(indextreenode.isleaf)
-	for i := range indextreenode.children {
-		ctrienode := indextreenode.children[i].ConvertNode()
+func (indextree *IndexTreeNode) ConvertNode() *gramClvc.TrieTreeNode {
+	node := gramClvc.NewTrieTreeNode(indextree.data)
+	node.SetIsleaf(indextree.isleaf)
+	for i := range indextree.children {
+		ctrienode := indextree.children[i].ConvertNode()
 		node.Children()[i] = ctrienode
 	}
 	return node
+}
+
+func (tree *IndexTree) UpdateIndexRootFrequency() {
+	for _, child := range tree.root.children {
+		tree.root.frequency += child.frequency
+	}
+	tree.root.frequency--
+}
+
+func (tree *IndexTree) GetMemorySizeOfIndexTree() {
+	tree.root.GetMemorySizeOfIndexTreeTheoretical(0)
+	fmt.Println("==============Theoretical MemoUsed===============")
+	fmt.Println(TheoreticalMemoUsed)
+	tree.root.GetMemorySizeOfIndexTreeExact(0)
+	fmt.Println("==============Exact MemoUsed=====================")
+	fmt.Println(ExactMemoUsed)
+	fmt.Println("==================INVERTEDSIZE===================")
+	fmt.Println(InvertedSize)
+	fmt.Println("==================ADDRSIZE=======================")
+	fmt.Println(AddrSize)
+}
+
+func (tree *IndexTree) SearchTermLengthAndTermAvgLenFromIndexTree() {
+	tree.Root().SearchGramsFromIndexTree()
+	fmt.Println("============== grams len: =======================")
+	fmt.Println(len(Grams))
+	fmt.Println("============== grams agv: =======================")
+	fmt.Println(SumInvertLen / len(Grams))
 }

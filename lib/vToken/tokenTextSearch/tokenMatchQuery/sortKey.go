@@ -15,13 +15,10 @@ limitations under the License.
 */
 package tokenMatchQuery
 
-import "github.com/openGemini/openGemini/lib/vToken/tokenIndex"
-
 type SortKey struct {
 	offset             uint16
 	sizeOfInvertedList int
 	tokenArr           []string
-	invertedIndex      tokenIndex.Inverted_index
 }
 
 func (s *SortKey) Offset() uint16 {
@@ -48,19 +45,10 @@ func (s *SortKey) SetTokenArr(tokenArr []string) {
 	s.tokenArr = tokenArr
 }
 
-func (s *SortKey) InvertedIndex() tokenIndex.Inverted_index {
-	return s.invertedIndex
-}
-
-func (s *SortKey) SetInvertedIndex(invertedIndex tokenIndex.Inverted_index) {
-	s.invertedIndex = invertedIndex
-}
-
-func NewSortKey(offset uint16, pos int, tokenArr []string, invertIndex tokenIndex.Inverted_index) SortKey {
+func NewSortKey(offset uint16, pos int, tokenArr []string) SortKey {
 	return SortKey{
 		offset:             offset,
 		sizeOfInvertedList: pos,
 		tokenArr:           tokenArr,
-		invertedIndex:      invertIndex,
 	}
 }

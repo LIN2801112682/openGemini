@@ -58,7 +58,7 @@ func InsertIndexNode(array map[uint8]*gramIndex.IndexTreeNode, node *gramIndex.I
 
 func GenerateQminTree(logs map[utils.SeriesId]string, qmin int) *gramIndex.IndexTree {
 	indexTrie := gramIndex.NewIndexTrie(qmin)
-	var vgMaps = make(map[string]gramIndex.Inverted_index)
+	var vgMaps = make(map[string]utils.Inverted_index)
 	for key := range logs {
 		gramMap := make(map[uint16]string, 0)
 		tsid := key.Id

@@ -16,11 +16,10 @@ limitations under the License.
 package tokenFuzzyQuery
 
 import (
-	"sort"
-
+	"github.com/openGemini/openGemini/lib/mpTrie"
 	"github.com/openGemini/openGemini/lib/utils"
-	"github.com/openGemini/openGemini/lib/vToken/tokenIndex"
 	"github.com/openGemini/openGemini/lib/vToken/tokenTextSearch/tokenMatchQuery"
+	"sort"
 )
 
 func AbsInt(a int) int {
@@ -108,24 +107,31 @@ func UnionMapTokenThree(x map[utils.SeriesId][]uint16, y map[utils.SeriesId][]ui
 		return x
 	}
 }
-func ReadInvertedIndex(token string, indexRootNode *tokenIndex.IndexTreeNode) map[utils.SeriesId][]uint16 {
-	var invertIndex tokenIndex.Inverted_index
-	var indexNode *tokenIndex.IndexTreeNode
-	var invertIndex2 tokenIndex.Inverted_index
-	var invertIndex3 tokenIndex.Inverted_index
-
+func ReadInvertedIndex(token string, indexRoot *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId][]uint16 {
+	var invertIndex utils.Inverted_index
+	var invertIndexOffset uint64
+	var addrOffset uint64
+	var indexNode *mpTrie.SearchTreeNode
+	var invertIndex1 utils.Inverted_index
+	var invertIndex2 utils.Inverted_index
+	var invertIndex3 utils.Inverted_index
 	tokenArr := []string{token}
-	invertIndex, indexNode = tokenMatchQuery.SearchInvertedListFromCurrentNode(tokenArr, indexRootNode, 0, invertIndex, indexNode)
-	invertIndexDeep := tokenMatchQuery.DeepCopy(invertIndex)
-	invertIndex2 = tokenMatchQuery.SearchInvertedListFromChildrensOfCurrentNode(indexNode, nil)
-	if indexNode != nil && len(indexNode.AddrOffset()) > 0 {
-		invertIndex3 = tokenMatchQuery.TurnAddr2InvertLists(indexNode.AddrOffset(), invertIndex3)
+	invertIndexOffset, addrOffset, indexNode = tokenMatchQuery.SearchNodeAddrFromPersistentIndexTree(tokenArr, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
+	if indexNode.Invtdlen() > 0 {
+		invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, buffer, invertedCache)
 	}
-	//todo 三个一起合并应会快一些
-	invertIndexDeep = UnionMapTokenThree(invertIndexDeep, invertIndex2, invertIndex3)
-	return invertIndexDeep
+	invertIndex = mpTrie.DeepCopy(invertIndex1)
+	invertIndex2 = mpTrie.SearchInvertedListFromChildrensOfCurrentNode(indexNode, invertIndex2, buffer, addrCache, invertedCache)
+	if indexNode.Addrlen() > 0 {
+		addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, buffer, addrCache)
+		if indexNode != nil && len(addrOffsets) > 0 {
+			invertIndex3 = mpTrie.TurnAddr2InvertLists(addrOffsets, buffer, invertedCache)
+		}
+	}
+	invertIndex = UnionMapTokenThree(invertIndex, invertIndex2, invertIndex3)
+	return invertIndex
 }
-func FuzzySearchComparedWithES(searchSingleToken string, indexRootNode *tokenIndex.IndexTreeNode, distance int) []utils.SeriesId {
+func FuzzySearchComparedWithES(searchSingleToken string, indexRoot *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, distance int) []utils.SeriesId {
 	sum := 0
 	sumPass := 0
 	mapRes := make(map[utils.SeriesId][]uint16)
@@ -149,16 +155,16 @@ func FuzzySearchComparedWithES(searchSingleToken string, indexRootNode *tokenInd
 			mapsearchGram[qgramSearch[i].Gram()] = append(mapsearchGram[qgramSearch[i].Gram()], qgramSearch[i].Pos())
 		}
 	}
-	for i, _ := range indexRootNode.Children() {
-		lenChildrendata := len(indexRootNode.Children()[i].Data())
+	for i, _ := range indexRoot.Children() {
+		lenChildrendata := len(indexRoot.Children()[i].Data())
 		if lenChildrendata > lensearchToken+distance || lenChildrendata < lensearchToken-distance {
 			continue
 		} else if lenChildrendata-q+1 < prefixgramcount || lensearchToken-q+1 < prefixgramcount {
 			sum++
-			verifyresult := VerifyED(searchSingleToken, indexRootNode.Children()[i].Data(), distance)
+			verifyresult := VerifyED(searchSingleToken, indexRoot.Children()[i].Data(), distance)
 			if verifyresult {
 				sumPass++
-				newMap := ReadInvertedIndex(indexRootNode.Children()[i].Data(), indexRootNode)
+				newMap := ReadInvertedIndex(indexRoot.Children()[i].Data(), indexRoot, buffer, addrCache, invertedCache)
 				mapRes = UnionMapToken(mapRes, newMap)
 			}
 			continue
@@ -166,7 +172,7 @@ func FuzzySearchComparedWithES(searchSingleToken string, indexRootNode *tokenInd
 			flagCommon := 0
 			var qgramData = make([]FuzzyPrefixGram, 0)
 			for m := 0; m < lenChildrendata-q+1; m++ {
-				qgramData = append(qgramData, NewFuzzyPrefixGram(indexRootNode.Children()[i].Data()[m:m+q], m))
+				qgramData = append(qgramData, NewFuzzyPrefixGram(indexRoot.Children()[i].Data()[m:m+q], m))
 			}
 			sort.SliceStable(qgramData, func(m, n int) bool {
 				if qgramData[m].Gram() < qgramData[n].Gram() {
@@ -181,10 +187,10 @@ func FuzzySearchComparedWithES(searchSingleToken string, indexRootNode *tokenInd
 						if AbsInt(mapsearchGram[qgramData[k].Gram()][n]-qgramData[k].Pos()) <= distance {
 							flagCommon = 1
 							sum++
-							verifyresult2 := VerifyED(searchSingleToken, indexRootNode.Children()[i].Data(), distance)
+							verifyresult2 := VerifyED(searchSingleToken, indexRoot.Children()[i].Data(), distance)
 							if verifyresult2 {
 								sumPass++
-								newMap := ReadInvertedIndex(indexRootNode.Children()[i].Data(), indexRootNode)
+								newMap := ReadInvertedIndex(indexRoot.Children()[i].Data(), indexRoot, buffer, addrCache, invertedCache)
 								mapRes = UnionMapToken(mapRes, newMap)
 
 							}
