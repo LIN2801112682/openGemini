@@ -1134,6 +1134,16 @@ func AddRecordToOther(dstRecord, srcRecord *record.Record) {
 	}
 }
 
+func RecordInitByOther(dstRecord, srcRecord *record.Record) {
+	schemaLen := len(srcRecord.Schema)
+	dstRecord.ColVals = make([]record.ColVal, schemaLen)
+	dstRecord.Schema = make([]record.Field, schemaLen)//这样对了吧
+	copy(dstRecord.Schema, srcRecord.Schema)
+	// colMeta
+	dstRecord.RecMeta = &record.RecMeta{}
+	dstRecord.ColMeta = append(dstRecord.ColMeta[:cap(dstRecord.ColMeta)], make([]record.ColMeta, len(dstRecord.Schema)-0)...)
+}
+
 func FilterByFilterTime(rec *record.Record, filterTime []int64) *record.Record {
 	lenFilter := len(filterTime)
 	if lenFilter == 0 {
@@ -1144,6 +1154,7 @@ func FilterByFilterTime(rec *record.Record, filterTime []int64) *record.Record {
 	endTime := times[len(times)-1]
 
 	newRec := record.Record{}
+	RecordInitByOther(&newRec, rec)
 	for i := range filterTime {
 		if filterTime[i] < startTime || filterTime[i] > endTime {
 			continue

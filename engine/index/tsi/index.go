@@ -110,6 +110,19 @@ func NewTagSetInfo() *TagSetInfo {
 	return setPool.get()
 }
 
+func NewTagSetInfoRe() *TagSetInfo {
+	const defaultElementNum = 64
+	return &TagSetInfo{
+		ref:        0,
+		key:        make([]byte, 0, 32),
+		Timestamps: make([][]int64, 0),
+		IDs:        make([]uint64, 0, defaultElementNum),
+		SeriesKeys: make([][]byte, 0, defaultElementNum),
+		Filters:    make([]influxql.Expr, 0, defaultElementNum),
+		TagsVec:    make([]influx.PointTags, 0, defaultElementNum),
+	}
+}
+
 func (t *TagSetInfo) reset() {
 	t.ref = 0
 	t.key = t.key[:0]
@@ -188,9 +201,9 @@ func (p *tagSetInfoPool) get() (set *TagSetInfo) {
 			return v.(*TagSetInfo)
 		}
 		return &TagSetInfo{
-			ref: 0,
-			key: make([]byte, 0, 32),
-
+			ref:        0,
+			key:        make([]byte, 0, 32),
+			Timestamps: make([][]int64, 0),
 			IDs:        make([]uint64, 0, defaultElementNum),
 			SeriesKeys: make([][]byte, 0, defaultElementNum),
 			Filters:    make([]influxql.Expr, 0, defaultElementNum),

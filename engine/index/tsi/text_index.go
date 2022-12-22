@@ -18,8 +18,6 @@ package tsi
 
 import (
 	"fmt"
-	"time"
-
 	"github.com/openGemini/openGemini/lib/clvIndex"
 	"github.com/openGemini/openGemini/lib/tracing"
 	"github.com/openGemini/openGemini/lib/utils"
@@ -27,6 +25,7 @@ import (
 	"github.com/openGemini/openGemini/open_src/influx/influxql"
 	"github.com/openGemini/openGemini/open_src/influx/query"
 	"github.com/openGemini/openGemini/open_src/vm/protoparser/influx"
+	"sort"
 )
 
 type TextIndex struct {
@@ -149,16 +148,13 @@ func (idx *TextIndex) searchTSIDsInternal(expr influxql.Expr, measurementName st
 	default:
 		return nil, nil
 	}
-
 }
 
 func (idx *TextIndex) Search(primaryIndex PrimaryIndex, span *tracing.Span, name []byte, opt *query.ProcessorOptions) (GroupSeries, error) {
-	start := time.Now().UnixMicro()
+	//start := time.Now().UnixMicro()
 	measurementName := opt.Name
-	start2 := time.Now().UnixMicro()
 	clvSids, _ := idx.searchTSIDsInternal(opt.Condition, measurementName)
-	end2 := time.Now().UnixMicro()
-	start3 := time.Now().UnixMicro()
+
 	mapClvSids := make(map[uint64][]int64)
 	for i := 0; i < len(clvSids); i++ { //todo
 		key := clvSids[i].Id
@@ -171,14 +167,13 @@ func (idx *TextIndex) Search(primaryIndex PrimaryIndex, span *tracing.Span, name
 			mapClvSids[key] = append(mapClvSids[key], val)
 		}
 	}
-	end3 := time.Now().UnixMicro()
+
 	mergeSetIndex := primaryIndex.(*MergeSetIndex)
 	var indexKeyBuf []byte // reused todo
 	var err error
-
 	groupSeries := make(GroupSeries, 1)
 	for i := 0; i < 1; i++ {
-		tagSetInfo := NewTagSetInfo()
+		tagSetInfo := NewTagSetInfoRe()
 		for id, timeArr := range mapClvSids {
 			indexKeyBuf, err = mergeSetIndex.searchSeriesKey(indexKeyBuf, id)
 			if err != nil {
@@ -189,27 +184,26 @@ func (idx *TextIndex) Search(primaryIndex PrimaryIndex, span *tracing.Span, name
 			seriesKey := getSeriesKeyBuf()
 			seriesKey = influx.Parse2SeriesKey(indexKeyBuf, seriesKey)
 			//tagSetInfo.Append(id, seriesKey, nil, tagsBuf)
-
 			tagSetInfo.IDs = append(tagSetInfo.IDs, id)
 			tagSetInfo.SeriesKeys = append(tagSetInfo.SeriesKeys, seriesKey)
 			tagSetInfo.TagsVec = append(tagSetInfo.TagsVec, tagsBuf)
 			tagSetInfo.Filters = append(tagSetInfo.Filters, nil)
 			var tmp = make([]int64, 0)
 			tmp = append(tmp, timeArr...)
+			sort.Slice(tmp, func(i, j int) bool { return tmp[i] < tmp[j] })
 			tagSetInfo.Timestamps = append(tagSetInfo.Timestamps, tmp)
 			indexKeyBuf = indexKeyBuf[:0]
 		}
 		groupSeries[i] = tagSetInfo
 	}
-	end := time.Now().UnixMicro()
+
+	//end := time.Now().UnixMicro()
 	fmt.Println(len(clvSids))
-	fmt.Println("clvSearch-time: ")
-	fmt.Println(float64(end2-start2)/1000, "ms")
-	fmt.Println("pro-res-time: ")
-	fmt.Println(float64(end3-start3)/1000, "ms")
-	fmt.Println("all-time: ")
-	fmt.Println(float64(end-start)/1000, "ms")
-	return groupSeries, nil
+	//fmt.Println("all-time(ms):")
+	//fmt.Println(float64(end-start) / 1000)
+	fmt.Println("===============================")
+	fmt.Println("===============================")
+	return groupSeries, nil //groupSeries
 }
 
 func (idx *TextIndex) Delete(primaryIndex PrimaryIndex, name []byte, condition influxql.Expr, tr TimeRange) error {
