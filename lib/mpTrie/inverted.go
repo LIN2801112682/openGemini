@@ -4,59 +4,27 @@ package mpTrie
 type InvertedCache struct {
 	capicity int
 	used     int
-	blkcache map[uint64]*InvertedNode
+	blkcache map[uint32]*InvertedNode
 	head     *InvertedNode
 	tail     *InvertedNode
 }
 
-func (this *InvertedCache) Capicity() int {
-	return this.capicity
-}
-
-func (this *InvertedCache) SetCapicity(capicity int) {
-	this.capicity = capicity
-}
-
-func (this *InvertedCache) Used() int {
-	return this.used
-}
-
-func (this *InvertedCache) SetUsed(used int) {
-	this.used = used
-}
-
-func (this *InvertedCache) Blkcache() map[uint64]*InvertedNode {
+func (this *InvertedCache) Blkcache() map[uint32]*InvertedNode {
 	return this.blkcache
 }
 
-func (this *InvertedCache) SetBlkcache(blkcache map[uint64]*InvertedNode) {
+func (this *InvertedCache) SetBlkcache(blkcache map[uint32]*InvertedNode) {
 	this.blkcache = blkcache
 }
 
-func (this *InvertedCache) Head() *InvertedNode {
-	return this.head
-}
-
-func (this *InvertedCache) SetHead(head *InvertedNode) {
-	this.head = head
-}
-
-func (this *InvertedCache) Tail() *InvertedNode {
-	return this.tail
-}
-
-func (this *InvertedCache) SetTail(tail *InvertedNode) {
-	this.tail = tail
-}
-
 type InvertedNode struct {
-	key   uint64 //offset
+	key   uint32 //offset
 	value *InvertedListBlock
 	prev  *InvertedNode
 	next  *InvertedNode
 }
 
-func NewEntry(key uint64, value *InvertedListBlock) *InvertedNode {
+func NewEntry(key uint32, value *InvertedListBlock) *InvertedNode {
 	return &InvertedNode{key: key, value: value}
 }
 
@@ -64,7 +32,7 @@ func InitInvertedCache(capicity int) *InvertedCache {
 	cache := &InvertedCache{
 		capicity: capicity,
 		used:     0,
-		blkcache: make(map[uint64]*InvertedNode),
+		blkcache: make(map[uint32]*InvertedNode),
 		head:     NewEntry(0, nil),
 		tail:     NewEntry(0, nil),
 	}
@@ -73,17 +41,18 @@ func InitInvertedCache(capicity int) *InvertedCache {
 	return cache
 }
 
-func (this *InvertedCache) Put(offset uint64, blk *InvertedListBlock) {
-	_, ok := this.blkcache[offset]
+func (this *InvertedCache) Put(offset uint64,fileid int, blk *InvertedListBlock) {
+	hash := getcacheHash(offset, fileid)
+	_, ok := this.blkcache[hash]
 	if ok {
-		entry := this.blkcache[offset]
+		entry := this.blkcache[hash]
 		entry.value = blk
 		//delete and move to head
 		this.DeleteEntry(entry)
 		this.AddEntryToHead(entry)
 	} else {
-		tmp := NewEntry(offset, blk)
-		this.blkcache[offset] = tmp
+		tmp := NewEntry(hash, blk)
+		this.blkcache[hash] = tmp
 		this.AddEntryToHead(tmp)
 		this.AddSize()
 		for this.used > this.capicity {
@@ -95,8 +64,9 @@ func (this *InvertedCache) Put(offset uint64, blk *InvertedListBlock) {
 
 }
 
-func (this *InvertedCache) Get(offset uint64) *InvertedListBlock {
-	if blk, ok := this.blkcache[offset]; ok {
+func (this *InvertedCache) Get(offset uint64,fileid int) *InvertedListBlock {
+	hash := getcacheHash(offset, fileid)
+	if blk, ok := this.blkcache[hash]; ok {
 		this.DeleteEntry(blk)
 		this.AddEntryToHead(blk)
 		return blk.value

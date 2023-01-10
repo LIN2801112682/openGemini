@@ -1,7 +1,11 @@
 package mpTrie
 
+/**
+* @ Author: Yaixihn
+* @ Dec:
+* @ Date: 2022/9/18 13:51
+ */
 //serialize object information
-
 const DEFAULT_SIZE = 64 / 8
 const FREQ_SIZE = 32/8
 type SerializeObj struct {
@@ -13,7 +17,6 @@ type SerializeObj struct {
 	invertedListEntry *InvertedListEntry
 	size              uint64
 }
-
 func (s *SerializeObj) Freq() uint32 {
 	return s.freq
 }
@@ -21,7 +24,6 @@ func (s *SerializeObj) Freq() uint32 {
 func (s *SerializeObj) SetFreq(freq uint32) {
 	s.freq = freq
 }
-
 func (s *SerializeObj) AddrListEntry() *AddrListEntry {
 	return s.addrListEntry
 }

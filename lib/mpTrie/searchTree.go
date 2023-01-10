@@ -2,6 +2,7 @@ package mpTrie
 
 import (
 	"github.com/openGemini/openGemini/lib/utils"
+	"os"
 	"strings"
 )
 
@@ -13,14 +14,12 @@ func (tree *SearchTree) Root() *SearchTreeNode {
 	return tree.root
 }
 
-func (tree *SearchTree) SetRoot(root *SearchTreeNode) {
-	tree.root = root
-}
-
 func NewSearchTree() *SearchTree {
 	return &SearchTree{root: NewSearchTreeNode("")}
 }
-func (tree *SearchTree) Insert(addrcache *AddrCache, invtdcache *InvertedCache, buffer []byte, data string, obj *SerializeObj) {
+
+
+func (tree *SearchTree) InsertGramForMulti(addrcache *AddrCache, invtdcache *InvertedCache, fileid int,file *os.File, data string, obj *SerializeObj) {
 	root := tree.root
 	for i, c := range data {
 		cur := int(c)
@@ -31,31 +30,28 @@ func (tree *SearchTree) Insert(addrcache *AddrCache, invtdcache *InvertedCache, 
 		root.data = data[i : i+1]
 	}
 	root.freq = int(obj.Freq())
-	//Add addrInfo
+	//Add addrmap addrInfo
 	addrlen := int(obj.AddrListlen())
-	root.addrlen = addrlen
+	addrmp := root.AddrCheck()
 	if addrlen != 0 {
-		addr := root.addrInfo
 		off := obj.AddrListEntry().Blockoffset()
-		addr.addrblkOffset = off
-		addrInfo := UnserializeAddrListBlk(off, buffer)
-		addrcache.Put(off, addrInfo)
-		addr.addrblksize = obj.AddrListEntry().Size()
+		addrInfo := UnserializeAddrListBlk(off, file)
+		addrcache.Put(off,fileid, addrInfo)
+		addrblksize := obj.AddrListEntry().Size()
+		addrmp[fileid] = NewAddrInfo(addrlen,off,addrblksize)
 	}
-	//Add invtdInfo
+	//Add invtdmap invtdInfo
+	invtdmp := root.InvtdCheck()
 	invtdlen := int(obj.InvertedListlen())
-	root.invtdlen = invtdlen
 	if invtdlen != 0 {
-		invt := root.invtdInfo
 		off := obj.InvertedListEntry().Blockoffset()
-		invt.ivtdblkOffset = off
-		invtdInfo := UnserializeInvertedListBlk(off, buffer)
-		invtdcache.Put(off, invtdInfo)
-		invt.ivtdblksize = obj.InvertedListEntry().Size()
+		invtdInfo := UnserializeInvertedListBlk(off, file)
+		invtdcache.Put(off,fileid, invtdInfo)
+		ivtdblksize := obj.InvertedListEntry().Size()
+		invtdmp[fileid] = NewInvtdInfo(invtdlen,off,ivtdblksize)
 	}
 	root.isleaf = true
 }
-
 func (tree *SearchTree) SearchPrefix(prefix string) *SearchTreeNode {
 	root := tree.root
 	for _, c := range prefix {
@@ -73,11 +69,12 @@ func (tree *SearchTree) Search(data string) bool {
 	return node.isleaf && node != nil
 }
 
-func (tree *SearchTree) PrintSearchTree(buffer []byte,addrcache *AddrCache, invtdcache *InvertedCache) {
-	tree.root.printsearchTreeNode(buffer,0, addrcache, invtdcache)
+func (tree *SearchTree) PrintSearchTree(file map[int]*os.File, addrcache *AddrCache, invtdcache *InvertedCache) {
+	tree.root.printsearchTreeNode(file,0, addrcache, invtdcache)
 }
 
-func (tree *SearchTree) InsertToken(addrcache *AddrCache, invtdcache *InvertedCache, buffer []byte, data string, obj *SerializeObj) {
+
+func (tree *SearchTree) InsertTokenForMulti(addrcache *AddrCache, invtdcache *InvertedCache, fileid int,file *os.File, data string, obj *SerializeObj) {
 	root := tree.root
 	tokens := strings.Split(data, " ")
 	for _, token := range tokens {
@@ -89,27 +86,25 @@ func (tree *SearchTree) InsertToken(addrcache *AddrCache, invtdcache *InvertedCa
 		root.data = token
 	}
 	root.freq = int(obj.Freq())
-	//Add addrInfo
+	//Add addrmap addrInfo
 	addrlen := int(obj.AddrListlen())
-	root.addrlen = addrlen
+	addrmp := root.AddrCheck()
 	if addrlen != 0 {
-		addr := root.addrInfo
 		off := obj.AddrListEntry().Blockoffset()
-		addr.addrblkOffset = off
-		addrInfo := UnserializeAddrListBlk(off, buffer)
-		addrcache.Put(off, addrInfo)
-		addr.addrblksize = obj.AddrListEntry().Size()
+		addrInfo := UnserializeAddrListBlk(off, file)
+		addrcache.Put(off,fileid, addrInfo)
+		addrblksize := obj.AddrListEntry().Size()
+		addrmp[fileid] = NewAddrInfo(addrlen,off,addrblksize)
 	}
-	//Add invtdInfo
+	//Add invtdmap invtdInfo
+	invtdmp := root.InvtdCheck()
 	invtdlen := int(obj.InvertedListlen())
-	root.invtdlen = invtdlen
 	if invtdlen != 0 {
-		invt := root.invtdInfo
 		off := obj.InvertedListEntry().Blockoffset()
-		invt.ivtdblkOffset = off
-		invtdInfo := UnserializeInvertedListBlk(off, buffer)
-		invtdcache.Put(off, invtdInfo)
-		invt.ivtdblksize = obj.InvertedListEntry().Size()
+		invtdInfo := UnserializeInvertedListBlk(off, file)
+		invtdcache.Put(off,fileid, invtdInfo)
+		ivtdblksize := obj.InvertedListEntry().Size()
+		invtdmp[fileid] = NewInvtdInfo(invtdlen,off,ivtdblksize)
 	}
 	root.isleaf = true
 }
@@ -131,3 +126,4 @@ func (tree *SearchTree) SearchToken(data string) bool {
 	node := tree.SearchTokenPrefix(data)
 	return node.isleaf && node != nil
 }
+

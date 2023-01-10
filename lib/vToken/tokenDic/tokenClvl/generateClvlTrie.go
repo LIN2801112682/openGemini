@@ -106,7 +106,7 @@ func GenTokenTw(trie *tokenIndex.IndexTree, sampleStringOfW map[utils.SeriesId]s
 		if len(tokenArr) > qmin { //Generate all index entries between qmin+1 - len(gram)
 			tokenIndex.TokenSubs = make([]tokenIndex.SubTokenOffset, 0)
 			tokenIndex.GenerateQmin2QmaxTokens(tokenArr, qmin)
-			treeW.InsertOnlyTokenIntoIndexTree(tokenIndex.TokenSubs, addr)
+			treeW.InsertOnlyTokenIntoIndexTree(tokenIndex.TokenSubs, addr, 0)
 		}
 	}
 	treeW.SetCout(len(sampleStringOfW))

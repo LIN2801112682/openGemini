@@ -23,7 +23,6 @@ import (
 	"strings"
 )
 
-// 根据一批日志数据通过字典树划分VG，构建索引项集
 func GenerateIndexTree(logs []utils.LogSeries, qmin int, qmax int, root *tokenClvc.TrieTreeNode) (*IndexTree, *IndexTreeNode) {
 	indexTree := NewIndexTree(qmin, qmax)
 	var vgMaps = make(map[string]utils.Inverted_index)
@@ -48,10 +47,12 @@ func GenerateIndexTree(logs []utils.LogSeries, qmin int, qmax int, root *tokenCl
 		if len(tokenArr) > qmin && len(tokenArr) <= qmax {
 			TokenSubs = make([]SubTokenOffset, 0)
 			GenerateQmin2QmaxTokens(tokenArr, qmin)
-			indexTree.InsertOnlyTokenIntoIndexTree(TokenSubs, addr)
+			indexTree.InsertOnlyTokenIntoIndexTree(TokenSubs, addr, len(invert_index))
 		}
 	}
+
 	indexTree.cout = len(logs)
+	indexTree.UpdateIndexRootFrequency()
 	//indexTree.PrintIndexTree()
 	fmt.Println(indexTree.cout)
 	return indexTree, indexTree.root

@@ -22,12 +22,20 @@ import (
 )
 
 type IndexTreeNode struct {
-	data string
+	data          string
 	frequency     int
 	children      map[int]*IndexTreeNode
 	isleaf        bool
 	invertedIndex utils.Inverted_index
 	addrOffset    map[*IndexTreeNode]uint16
+}
+
+func (node *IndexTreeNode) Frequency() int {
+	return node.frequency
+}
+
+func (node *IndexTreeNode) SetFrequency(frequency int) {
+	node.frequency = frequency
 }
 
 func (node *IndexTreeNode) Children() map[int]*IndexTreeNode {
@@ -70,18 +78,10 @@ func (node *IndexTreeNode) SetAddrOffset(addrOffset map[*IndexTreeNode]uint16) {
 	node.addrOffset = addrOffset
 }
 
-func (node *IndexTreeNode) Frequency() int {
-	return node.frequency
-}
-
-func (node *IndexTreeNode) SetFrequency(frequency int) {
-	node.frequency = frequency
-}
-
 func NewIndexTreeNode(data string) *IndexTreeNode {
 	return &IndexTreeNode{
 		data:          data,
-		frequency:     1,
+		frequency:     0,
 		isleaf:        false,
 		children:      make(map[int]*IndexTreeNode),
 		invertedIndex: make(map[utils.SeriesId][]uint16),
@@ -146,11 +146,13 @@ const ADDRBYTE = 1
 const OFFSETBYTE = 2
 
 var InvertedSize uint64 = 0
-
 var AddrSize uint64 = 0
+var Nodes uint64 = 0 //childsum = Nodes - 1
+var PositionList uint64 = 0
 
 func (node *IndexTreeNode) GetMemorySizeOfIndexTreeTheoretical(level int) { //unsafe.sizeof
 	TheoreticalMemoUsed += (NODEISLEAFBYTE + NODEDATABYTE + NODEFREQBYTE)
+	Nodes++
 	if len(node.children) > 0 {
 		TheoreticalMemoUsed += uint64(len(node.children) * CHILDMAPBYTE)
 	}
@@ -158,6 +160,7 @@ func (node *IndexTreeNode) GetMemorySizeOfIndexTreeTheoretical(level int) { //un
 	if len(invertedIndex) > 0 {
 		InvertedSize += uint64(len(invertedIndex))
 		for _, v := range invertedIndex {
+			PositionList += uint64(len(v))
 			TheoreticalMemoUsed += uint64(SIDBYTE + len(v)*POSBYTE)
 		}
 	}

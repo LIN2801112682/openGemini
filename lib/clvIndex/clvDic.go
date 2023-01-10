@@ -16,12 +16,14 @@ limitations under the License.
 package clvIndex
 
 import (
+	"fmt"
 	"github.com/openGemini/openGemini/lib/mpTrie"
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvl"
 	"github.com/openGemini/openGemini/lib/vToken/tokenDic/tokenClvc"
 	"github.com/openGemini/openGemini/lib/vToken/tokenDic/tokenClvl"
+	"os"
 )
 
 /*
@@ -33,18 +35,20 @@ import (
 */
 
 const QMINGRAM = 2
-const QMAXGRAM = 12
-const LOGTREEMAX = 12
+const QMAXGRAM = 50
+const LOGTREEMAX = 50
 const QMINTOKEN = 1
 const QMAXTOKEN = 7
-const TGRAM = 70
+const TGRAM = 100
 const TTOKEN = 70
 const GRAMWLEN = 20
 const TOKENWLEN = 20
 
-const MAXDICBUFFER = 500000
+const PREFIXLEN = 5
+const ED = 2
+const REGEX_Q = 3
 
-const DICOUTPATH = "../../lib/persistence/"
+const MAXDICBUFFER = 500000
 
 var DicIndex = 0
 var BuffDicStrings []utils.LogSeries
@@ -63,31 +67,37 @@ func NewCLVDictionary() *CLVDictionary {
 	}
 }
 
-func (clvDic *CLVDictionary) CreateDictionaryIfNotExists(log string, tsid uint64, timeStamp int64, indexType CLVIndexType) {
+func (clvDic *CLVDictionary) CreateDictionaryIfNotExists(log string, tsid uint64, timeStamp int64, indexType CLVIndexType, path string) {
 	if DicIndex < MAXDICBUFFER {
 		BuffDicStrings = append(BuffDicStrings, utils.LogSeries{Log: log, Tsid: tsid, TimeStamp: timeStamp})
 		DicIndex += 1
 	}
 	if DicIndex == MAXDICBUFFER {
+		fmt.Println("===========dic data ready===========")
 		if indexType == VGRAM {
-			clvDic.CreateCLVVGramDictionaryIfNotExists(BuffDicStrings)
+			clvDic.CreateCLVVGramDictionaryIfNotExists(BuffDicStrings, path)
 		}
 		if indexType == VTOKEN {
-			clvDic.CreateCLVVTokenDictionaryIfNotExists(BuffDicStrings)
+			clvDic.CreateCLVVTokenDictionaryIfNotExists(BuffDicStrings, path)
 		}
 	}
 }
 
-func (clvDic *CLVDictionary) CreateCLVVGramDictionaryIfNotExists(buffDicStrings []utils.LogSeries) {
+func (clvDic *CLVDictionary) CreateCLVVGramDictionaryIfNotExists(buffDicStrings []utils.LogSeries, path string) {
 	if clvDic.DicType == CLVC {
 		clvcdic := gramClvc.NewCLVCDic(QMINGRAM, QMAXGRAM)
 		clvcdic.GenerateClvcDictionaryTree(buffDicStrings, QMINGRAM, QMAXGRAM, TGRAM)
 		//clvcdic.TrieTree.PrintTree()
-		dicPath := DICOUTPATH + "clvTable/" + "logs/" + "VGRAM/" + "dic/" + "dic0.txt"
-		mpTrie.SerializeGramDicToFile(clvcdic.TrieTree, dicPath)
-		clvDic.VgramDicRoot = mpTrie.UnserializeGramDicFromFile(dicPath)
-		clvDic.VgramDicRoot.SetQmin(QMINGRAM)
-		clvDic.VgramDicRoot.SetQmax(QMAXGRAM)
+		dicPath := path + "/clvTable/" + "logs/" + "VGRAM/" + "dic/"
+		dicPathFile := dicPath + "dic0.txt"
+		os.MkdirAll(dicPath, os.ModePerm)
+		dicFile, err := os.OpenFile(dicPathFile, os.O_CREATE|os.O_WRONLY, 0644)
+		defer dicFile.Close()
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+		mpTrie.SerializeGramDicToFile(clvcdic.TrieTree, dicPathFile)
+		clvDic.VgramDicRoot = mpTrie.UnserializeGramDicFromFile(dicPathFile, QMINGRAM, QMAXGRAM)
 		//clvDic.VgramClvcDicRoot.PrintTree()
 	}
 	if clvDic.DicType == CLVL {
@@ -99,16 +109,21 @@ func (clvDic *CLVDictionary) CreateCLVVGramDictionaryIfNotExists(buffDicStrings 
 	}
 }
 
-func (clvDic *CLVDictionary) CreateCLVVTokenDictionaryIfNotExists(buffDicStrings []utils.LogSeries) {
+func (clvDic *CLVDictionary) CreateCLVVTokenDictionaryIfNotExists(buffDicStrings []utils.LogSeries, path string) {
 	if clvDic.DicType == CLVC {
 		clvcdic := tokenClvc.NewCLVCDic(QMINTOKEN, QMAXTOKEN)
 		clvcdic.GenerateClvcDictionaryTree(buffDicStrings, QMINTOKEN, QMAXTOKEN, TTOKEN)
 		//clvcdic.TrieTree.PrintTree()
-		dicPath := DICOUTPATH + "clvTable/" + "logs/" + "VTOKEN/" + "dic/" + "dic0.txt"
-		mpTrie.SerializeTokenDicToFile(clvcdic.TrieTree, dicPath)
-		clvDic.VtokenDicRoot = mpTrie.UnserializeTokenDicFromFile(dicPath)
-		clvDic.VtokenDicRoot.SetQmin(QMINTOKEN)
-		clvDic.VtokenDicRoot.SetQmax(QMAXTOKEN)
+		dicPath := path + "/clvTable/" + "logs/" + "VTOKEN/" + "dic/"
+		dicPathFile := dicPath + "dic0.txt"
+		os.MkdirAll(dicPath, os.ModePerm)
+		dicFile, err := os.OpenFile(dicPathFile, os.O_CREATE|os.O_WRONLY, 0644)
+		defer dicFile.Close()
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+		mpTrie.SerializeTokenDicToFile(clvcdic.TrieTree, dicPathFile)
+		clvDic.VtokenDicRoot = mpTrie.UnserializeTokenDicFromFile(dicPathFile, QMINTOKEN, QMAXTOKEN)
 		//clvDic.VtokenClvcDicRoot.PrintTree()
 	}
 	if clvDic.DicType == CLVL {

@@ -16,13 +16,16 @@ limitations under the License.
 package tokenFuzzyQuery
 
 import (
+	"fmt"
 	"github.com/openGemini/openGemini/lib/mpTrie"
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vToken/tokenTextSearch/tokenMatchQuery"
+	"os"
 	"sort"
+	"time"
 )
 
-func AbsInt(a int) int {
+func AbsInt(a int8) int8 {
 	if a >= 0 {
 		return a
 	} else {
@@ -73,73 +76,108 @@ func VerifyED(searStr string, dataStr string, distance int) bool {
 		return false
 	}
 }
-func UnionMapToken(map1 map[utils.SeriesId][]uint16, map2 map[utils.SeriesId][]uint16) map[utils.SeriesId][]uint16 {
-	if len(map1) == 0 {
-		return map2
-	} else if len(map2) == 0 {
-		return map1
-	} else if len(map1) < len(map2) {
-		for sid1, _ := range map1 {
-			//if _,ok := map2[sid1]; !ok {
-			map2[sid1] = make([]uint16, 0)
-			//}
-		}
-		return map2
-	} else {
-		for sid1, _ := range map2 {
-			//if _, ok := map1[sid1]; !ok {
-			map1[sid1] = make([]uint16, 0)
-			//}
-		}
+
+func UnionMapPos(map1 map[utils.SeriesId]struct{}, mapPos map[utils.SeriesId][]uint16) map[utils.SeriesId]struct{} {
+	if len(mapPos) == 0 {
 		return map1
 	}
-}
-func UnionMapTokenThree(x map[utils.SeriesId][]uint16, y map[utils.SeriesId][]uint16, z map[utils.SeriesId][]uint16) map[utils.SeriesId][]uint16 {
-	if len(x) == 0 {
-		return UnionMapToken(y, z)
-	} else if len(y) == 0 {
-		return UnionMapToken(x, z)
-	} else if len(z) == 0 {
-		return UnionMapToken(x, y)
-	} else {
-		x = UnionMapToken(x, y)
-		x = UnionMapToken(x, z)
-		return x
+	for key, _ := range mapPos {
+		if _, ok := map1[key]; !ok {
+			map1[key] = struct{}{}
+
+		}
 	}
+	return map1
 }
-func ReadInvertedIndex(token string, indexRoot *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId][]uint16 {
-	var invertIndex utils.Inverted_index
+func FuzzySearchChildrens(indexNode *mpTrie.SearchTreeNode, resMapFuzzy map[utils.SeriesId]struct{}, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+	if indexNode != nil {
+		for _, child := range indexNode.Children() {
+			if len(child.InvtdCheck()) > 0 {
+				if _, ok := child.InvtdCheck()[fileId]; ok {
+					if child.InvtdCheck()[fileId].Invtdlen() > 0 {
+						childInvertIndexOffset := child.InvtdCheck()[fileId].IvtdblkOffset()
+						childInvertedIndex := make(map[utils.SeriesId][]uint16)
+						childInvertedIndex = mpTrie.SearchInvertedIndexFromCacheOrDisk(childInvertIndexOffset, fileId, filePtr, invertedCache)
+						if len(childInvertedIndex) > 0 {
+							resMapFuzzy = UnionMapPos(resMapFuzzy, childInvertedIndex)
+						}
+					}
+				}
+
+			}
+
+			if len(child.AddrCheck()) > 0 {
+				if _, ok := child.AddrCheck()[fileId]; ok {
+					if child.AddrCheck()[fileId].Addrlen() > 0 {
+						childAddrOffset := child.AddrCheck()[fileId].AddrblkOffset()
+						childAddrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(childAddrOffset, fileId, filePtr, addrCache)
+						if len(childAddrOffsets) > 0 {
+							resMapFuzzy = FuzzySearchAddr(resMapFuzzy, childAddrOffsets, fileId, filePtr, invertedCache)
+						}
+					}
+				}
+
+			}
+
+			resMapFuzzy = FuzzySearchChildrens(child, resMapFuzzy, fileId, filePtr, addrCache, invertedCache)
+		}
+	}
+	return resMapFuzzy
+}
+
+func FuzzySearchAddr(resMapFuzzy map[utils.SeriesId]struct{}, addrOffsets map[uint64]uint16, fileId int, filePtr map[int]*os.File, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+
+	if addrOffsets == nil || len(addrOffsets) == 0 {
+		return resMapFuzzy
+	}
+	for addr, _ := range addrOffsets {
+		addrInvertedIndex := mpTrie.SearchInvertedIndexFromCacheOrDisk(addr, fileId, filePtr, invertedCache)
+
+		resMapFuzzy = UnionMapPos(resMapFuzzy, addrInvertedIndex)
+	}
+	return resMapFuzzy
+}
+func TokenFuzzyReadInver(resMapFuzzy map[utils.SeriesId]struct{}, token string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+	tokenArr := []string{token}
 	var invertIndexOffset uint64
 	var addrOffset uint64
 	var indexNode *mpTrie.SearchTreeNode
 	var invertIndex1 utils.Inverted_index
-	var invertIndex2 utils.Inverted_index
-	var invertIndex3 utils.Inverted_index
-	tokenArr := []string{token}
-	invertIndexOffset, addrOffset, indexNode = tokenMatchQuery.SearchNodeAddrFromPersistentIndexTree(tokenArr, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
-	if indexNode.Invtdlen() > 0 {
-		invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, buffer, invertedCache)
-	}
-	invertIndex = mpTrie.DeepCopy(invertIndex1)
-	invertIndex2 = mpTrie.SearchInvertedListFromChildrensOfCurrentNode(indexNode, invertIndex2, buffer, addrCache, invertedCache)
-	if indexNode.Addrlen() > 0 {
-		addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, buffer, addrCache)
-		if indexNode != nil && len(addrOffsets) > 0 {
-			invertIndex3 = mpTrie.TurnAddr2InvertLists(addrOffsets, buffer, invertedCache)
+
+	invertIndexOffset, addrOffset, indexNode = tokenMatchQuery.SearchNodeAddrFromPersistentIndexTree(fileId, tokenArr, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
+	if len(indexNode.InvtdCheck()) > 0 {
+		if _, ok := indexNode.InvtdCheck()[fileId]; ok {
+			if indexNode.InvtdCheck()[fileId].Invtdlen() > 0 {
+				invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, fileId, filePtr, invertedCache)
+			}
 		}
 	}
-	invertIndex = UnionMapTokenThree(invertIndex, invertIndex2, invertIndex3)
-	return invertIndex
+	resMapFuzzy = UnionMapPos(resMapFuzzy, invertIndex1)
+	resMapFuzzy = FuzzySearchChildrens(indexNode, resMapFuzzy, fileId, filePtr, addrCache, invertedCache)
+	if len(indexNode.AddrCheck()) > 0 {
+		if _, ok := indexNode.AddrCheck()[fileId]; ok {
+			if indexNode.AddrCheck()[fileId].Addrlen() > 0 {
+				addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, fileId, filePtr, addrCache)
+				if indexNode != nil && len(addrOffsets) > 0 {
+					resMapFuzzy = FuzzySearchAddr(resMapFuzzy, addrOffsets, fileId, filePtr, invertedCache)
+				}
+			}
+		}
+
+	}
+
+	return resMapFuzzy
 }
-func FuzzySearchComparedWithES(searchSingleToken string, indexRoot *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, distance int) []utils.SeriesId {
+
+func FuzzySearchComparedWithES(searchSingleToken string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, distance, prefixlen int) map[utils.SeriesId]struct{} {
 	sum := 0
 	sumPass := 0
-	mapRes := make(map[utils.SeriesId][]uint16)
-	q := 2
+	mapRes := make(map[utils.SeriesId]struct{})
+	q := prefixlen
 	lensearchToken := len(searchSingleToken)
-	var qgramSearch = make([]FuzzyPrefixGram, 0)
+	var qgramSearch = make([]utils.FuzzyPrefixGram, 0)
 	for i := 0; i < lensearchToken-q+1; i++ {
-		qgramSearch = append(qgramSearch, NewFuzzyPrefixGram(searchSingleToken[i:i+q], i))
+		qgramSearch = append(qgramSearch, utils.NewFuzzyPrefixGram(searchSingleToken[i:i+q], int8(i)))
 	}
 	sort.SliceStable(qgramSearch, func(i, j int) bool {
 		if qgramSearch[i].Gram() < qgramSearch[j].Gram() {
@@ -149,7 +187,7 @@ func FuzzySearchComparedWithES(searchSingleToken string, indexRoot *mpTrie.Searc
 	})
 	prefixgramcount := q*distance + 1
 
-	var mapsearchGram = make(map[string][]int)
+	var mapsearchGram = make(map[string][]int8)
 	if lensearchToken-q+1 >= prefixgramcount {
 		for i := 0; i < prefixgramcount; i++ {
 			mapsearchGram[qgramSearch[i].Gram()] = append(mapsearchGram[qgramSearch[i].Gram()], qgramSearch[i].Pos())
@@ -164,35 +202,23 @@ func FuzzySearchComparedWithES(searchSingleToken string, indexRoot *mpTrie.Searc
 			verifyresult := VerifyED(searchSingleToken, indexRoot.Children()[i].Data(), distance)
 			if verifyresult {
 				sumPass++
-				newMap := ReadInvertedIndex(indexRoot.Children()[i].Data(), indexRoot, buffer, addrCache, invertedCache)
-				mapRes = UnionMapToken(mapRes, newMap)
+				mapRes = TokenFuzzyReadInver(mapRes, indexRoot.Children()[i].Data(), indexRoot, fileId, filePtr, addrCache, invertedCache)
 			}
 			continue
 		} else {
 			flagCommon := 0
-			var qgramData = make([]FuzzyPrefixGram, 0)
-			for m := 0; m < lenChildrendata-q+1; m++ {
-				qgramData = append(qgramData, NewFuzzyPrefixGram(indexRoot.Children()[i].Data()[m:m+q], m))
-			}
-			sort.SliceStable(qgramData, func(m, n int) bool {
-				if qgramData[m].Gram() < qgramData[n].Gram() {
-					return true
-				}
-				return false
-			})
 			for k := 0; k < prefixgramcount; k++ {
-				_, ok := mapsearchGram[qgramData[k].Gram()]
+				_, ok := mapsearchGram[indexRoot.Children()[i].PrefixGrams()[k].Gram()]
 				if ok {
-					for n := 0; n < len(mapsearchGram[qgramData[k].Gram()]); n++ {
-						if AbsInt(mapsearchGram[qgramData[k].Gram()][n]-qgramData[k].Pos()) <= distance {
+					for n := 0; n < len(mapsearchGram[indexRoot.Children()[i].PrefixGrams()[k].Gram()]); n++ {
+						if AbsInt(mapsearchGram[indexRoot.Children()[i].PrefixGrams()[k].Gram()][n]-indexRoot.Children()[i].PrefixGrams()[k].Pos()) <= int8(distance) {
 							flagCommon = 1
 							sum++
 							verifyresult2 := VerifyED(searchSingleToken, indexRoot.Children()[i].Data(), distance)
+
 							if verifyresult2 {
 								sumPass++
-								newMap := ReadInvertedIndex(indexRoot.Children()[i].Data(), indexRoot, buffer, addrCache, invertedCache)
-								mapRes = UnionMapToken(mapRes, newMap)
-
+								mapRes = TokenFuzzyReadInver(mapRes, indexRoot.Children()[i].Data(), indexRoot, fileId, filePtr, addrCache, invertedCache)
 							}
 							break
 						}
@@ -205,9 +231,16 @@ func FuzzySearchComparedWithES(searchSingleToken string, indexRoot *mpTrie.Searc
 			continue
 		}
 	}
-	resArr := make([]utils.SeriesId, 0)
-	for i, _ := range mapRes {
-		resArr = append(resArr, i)
+	return mapRes
+}
+
+func FuzzyTokenQueryTries(searchStr string, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, distance, prefixlen int) map[utils.SeriesId]struct{} {
+	start := time.Now().UnixMicro()
+	var resArr = make(map[utils.SeriesId]struct{})
+	for fileId, _ := range filePtr {
+		resArr = utils.Or(FuzzySearchComparedWithES(searchStr, indexRoots, fileId, filePtr, addrCache, invertedCache, distance, prefixlen), resArr)
 	}
+	end := time.Now().UnixMicro()
+	fmt.Println(float64(end-start) / 1000)
 	return resArr
 }

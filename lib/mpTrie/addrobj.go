@@ -1,8 +1,6 @@
 package mpTrie
 
-import (
-	"fmt"
-)
+import "fmt"
 
 const deafult_addrItemSize = 10 //(64/8)+16/8
 type AddrItem struct {

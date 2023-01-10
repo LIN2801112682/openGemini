@@ -21,6 +21,7 @@ import (
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
 	"github.com/openGemini/openGemini/lib/vGram/gramTextSearch/gramMatchQuery"
+	"os"
 )
 
 type GnfaNode struct {
@@ -237,12 +238,14 @@ func (g *Gnfa) AddEdge(label string, start *GnfaNode, end *GnfaNode) {
 
 }
 
-func (g *Gnfa) LoadInvertedIndex(index *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) {
+func (g *Gnfa) LoadInvertedIndex(index *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) {
 	for i := 0; i < len(g.edges); i++ {
 		edge := g.edges[i]
 		label := edge.label
-		invertedindex := SearchString(index, label, buffer, addrCache, invertedCache)
-		edge.index = invertedindex
+		if label != "" {
+			invertedindex := SearchString(index, label, fileId, filePtr, addrCache, invertedCache)
+			edge.index = invertedindex
+		}
 	}
 }
 
@@ -352,7 +355,7 @@ func (g *Gnfa) Isfinal(node *GnfaNode) bool {
 	return false
 }
 
-func SearchString(indexRoot *mpTrie.SearchTreeNode, label string, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) *utils.Inverted_index {
+func SearchString(indexRoot *mpTrie.SearchTreeNode, label string, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) *utils.Inverted_index {
 	var invertIndex utils.Inverted_index
 	var invertIndexOffset uint64
 	var addrOffset uint64
@@ -360,22 +363,51 @@ func SearchString(indexRoot *mpTrie.SearchTreeNode, label string, buffer []byte,
 	var invertIndex1 utils.Inverted_index
 	var invertIndex2 utils.Inverted_index
 	var invertIndex3 utils.Inverted_index
-	invertIndexOffset, addrOffset, indexNode = gramMatchQuery.SearchNodeAddrFromPersistentIndexTree(label, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
-	if indexNode.Invtdlen() > 0 {
-		invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, buffer, invertedCache)
+	invertIndexOffset, addrOffset, indexNode = gramMatchQuery.SearchNodeAddrFromPersistentIndexTree(fileId, label, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
+	if indexNode == nil {
+		return nil
 	}
-	invertIndex = mpTrie.DeepCopy(invertIndex1)
-	invertIndex2 = mpTrie.SearchInvertedListFromChildrensOfCurrentNode(indexNode, invertIndex2, buffer, addrCache, invertedCache)
-	if indexNode.Addrlen() > 0 {
-		addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, buffer, addrCache)
-		if indexNode != nil && len(addrOffsets) > 0 {
-			invertIndex3 = mpTrie.TurnAddr2InvertLists(addrOffsets, buffer, invertedCache)
+	if len(indexNode.InvtdCheck()) > 0 {
+		if _, ok := indexNode.InvtdCheck()[fileId]; ok {
+			if indexNode.InvtdCheck()[fileId].Invtdlen() > 0 {
+				invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, fileId, filePtr, invertedCache)
+			}
 		}
 	}
-	invertIndex = mpTrie.MergeMapsInvertLists(invertIndex2, invertIndex)
-	invertIndex = mpTrie.MergeMapsInvertLists(invertIndex3, invertIndex)
+	invertIndex2 = mpTrie.SearchInvertedListFromChildrensOfCurrentNode(indexNode, invertIndex2, fileId, filePtr, addrCache, invertedCache)
+	if len(indexNode.AddrCheck()) > 0 {
+		if _, ok := indexNode.AddrCheck()[fileId]; ok {
+			if indexNode.AddrCheck()[fileId].Addrlen() > 0 {
+				addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, fileId, filePtr, addrCache)
+				if indexNode != nil && len(addrOffsets) > 0 {
+					invertIndex3 = mpTrie.TurnAddr2InvertLists(addrOffsets, fileId, filePtr, invertedCache)
+				}
+			}
+		}
+	}
+	cnt := 0
+	cnt++
+	invertIndex = MergeInvertIndex(invertIndex1, invertIndex2)
+	invertIndex = MergeInvertIndex(invertIndex, invertIndex3)
 
 	return &invertIndex
+}
+
+func MergeInvertIndex(index1, index2 utils.Inverted_index) utils.Inverted_index {
+	if index1 == nil {
+		return index2
+	} else if index2 == nil {
+		return index1
+	}
+	for sid, plist := range index2 {
+		plist1, find := index1[sid]
+		if !find {
+			index1[sid] = plist
+		} else {
+			plist1 = append(plist1, plist...)
+		}
+	}
+	return index1
 }
 
 type SeriesIdWithPosition struct {
@@ -398,46 +430,6 @@ func (sidwp *SeriesIdWithPosition) Print() {
 func NewSeriesIdWithPosition(sid utils.SeriesId, startposition []uint16, endposition []uint16) *SeriesIdWithPosition {
 	return &SeriesIdWithPosition{sid: sid, startposition: startposition, endposition: endposition}
 }
-
-//func QuickSort(sidlist []*SeriesIdWithPosition) {
-//	Sort(sidlist, 0, len(sidlist))
-//}
-
-//func Sort(sidlist []*SeriesIdWithPosition, left, right int) {
-//	if left < right {
-//		pivot := sidlist[left].sid.Id
-//		j := left
-//		for i := left; i < right; i++ {
-//			if sidlist[i].sid.Id < pivot {
-//				j++
-//				sidlist[j], sidlist[i] = sidlist[i], sidlist[j]
-//			}
-//		}
-//		sidlist[left], sidlist[j] = sidlist[j], sidlist[left]
-//		Sort(sidlist, left, j)
-//		Sort(sidlist, j+1, right)
-//	}
-//}
-
-//func QuickSort2(sidlist []utils.SeriesId) {
-//	Sort2(sidlist, 0, len(sidlist))
-//}
-
-//func Sort2(sidlist []utils.SeriesId, left, right int) {
-//	if left < right {
-//		pivot := sidlist[left].Id
-//		j := left
-//		for i := left; i < right; i++ {
-//			if sidlist[i].Id < pivot {
-//				j++
-//				sidlist[j], sidlist[i] = sidlist[i], sidlist[j]
-//			}
-//		}
-//		sidlist[left], sidlist[j] = sidlist[j], sidlist[left]
-//		Sort2(sidlist, left, j)
-//		Sort2(sidlist, j+1, right)
-//	}
-//}
 
 func RemoveDuplicate(sidlist []*SeriesIdWithPosition) []*SeriesIdWithPosition {
 	sidmap := make(map[utils.SeriesId]*SeriesIdWithPosition)

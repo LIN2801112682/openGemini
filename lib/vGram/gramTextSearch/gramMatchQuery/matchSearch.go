@@ -21,27 +21,31 @@ import (
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
 	"github.com/openGemini/openGemini/lib/vGram/gramIndex"
+	"os"
 	"sort"
 	"time"
 )
 
-func MatchSearch(searchStr string, root *gramClvc.TrieTreeNode, indexRoots *mpTrie.SearchTreeNode, qmin int, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []utils.SeriesId {
+func MatchSearch(searchStr string, root *gramClvc.TrieTreeNode, indexRoots *mpTrie.SearchTreeNode, qmin int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+	start := time.Now().UnixMicro()
+	var vgMap = make(map[uint16]string)
+	gramIndex.VGConsBasicIndex(root, qmin, searchStr, vgMap)
+	var resArr = make(map[utils.SeriesId]struct{})
+	for fileId, _ := range filePtr {
+		resArr = utils.Or(MatchSearch2(vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache), resArr)
+	}
+	end := time.Now().UnixMicro()
+	fmt.Println("match cost time:(ms)", float64(end-start)/1000)
+	return resArr
+
 	/*var vgMap = make(map[uint16]string)
 	gramIndex.VGConsBasicIndex(root, qmin, searchStr, vgMap)
 	var resArr = make([]utils.SeriesId, 0) //todo
-	for i := 0; i < len(indexRoots); i++ {
-		resArr = append(resArr, MatchSearch2(vgMap, indexRoots[i], buffer, addrCache, invertedCache)...)
-	}
+	resArr = append(resArr, MatchSearch2(vgMap, indexRoots, filePtr, addrCache, invertedCache)...)
 	return resArr*/
-	var vgMap = make(map[uint16]string)
-	gramIndex.VGConsBasicIndex(root, qmin, searchStr, vgMap)
-	var resArr = make([]utils.SeriesId, 0)
-	resArr = append(resArr, MatchSearch2(vgMap, indexRoots, buffer, addrCache, invertedCache)...)
-	return resArr
 }
 
-func MatchSearch2(vgMap map[uint16]string, indexRoot *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []utils.SeriesId {
-	start1 := time.Now().UnixMicro()
+func MatchSearch2(vgMap map[uint16]string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
 	if len(vgMap) == 1 {
 		gram := vgMap[0]
 		var invertIndexOffset uint64
@@ -49,21 +53,27 @@ func MatchSearch2(vgMap map[uint16]string, indexRoot *mpTrie.SearchTreeNode, buf
 		var indexNode *mpTrie.SearchTreeNode
 		var invertIndex1 utils.Inverted_index
 		arrMap := make(map[utils.SeriesId]struct{})
-		invertIndexOffset, addrOffset, indexNode = SearchNodeAddrFromPersistentIndexTree(gram, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
-		if indexNode.Invtdlen() > 0 {
-			invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, buffer, invertedCache)
-		}
-		arrMap = mpTrie.MergeMapsKeys(invertIndex1, arrMap)
-		arrMap = mpTrie.SearchInvertedListFromChildrensOfCurrentNode2(indexNode, arrMap, buffer, addrCache, invertedCache)
-		if indexNode.Addrlen() > 0 {
-			addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, buffer, addrCache)
-			if indexNode != nil && len(addrOffsets) > 0 {
-				arrMap = mpTrie.TurnAddr2InvertLists2(addrOffsets, buffer, invertedCache, arrMap)
+		invertIndexOffset, addrOffset, indexNode = SearchNodeAddrFromPersistentIndexTree(fileId, gram, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
+		if len(indexNode.InvtdCheck()) > 0 {
+			if _, ok := indexNode.InvtdCheck()[fileId]; ok {
+				if indexNode.InvtdCheck()[fileId].Invtdlen() > 0 {
+					invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, fileId, filePtr, invertedCache)
+				}
 			}
 		}
-		end1 := time.Now().UnixMicro()
-		fmt.Println("match cost time:", (end1-start1)/1000)
-		return mpTrie.MapKeyToSlices(arrMap)
+		arrMap = mpTrie.MergeMapsKeys(invertIndex1, arrMap)
+		arrMap = mpTrie.SearchInvertedListFromChildrensOfCurrentNode2(indexNode, arrMap, fileId, filePtr, addrCache, invertedCache)
+		if len(indexNode.AddrCheck()) > 0 {
+			if _, ok := indexNode.AddrCheck()[fileId]; ok {
+				if indexNode.AddrCheck()[fileId].Addrlen() > 0 {
+					addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, fileId, filePtr, addrCache)
+					if indexNode != nil && len(addrOffsets) > 0 {
+						arrMap = mpTrie.TurnAddr2InvertLists2(addrOffsets, fileId, filePtr, invertedCache, arrMap)
+					}
+				}
+			}
+		}
+		return arrMap
 	} else {
 		var sortSumInvertList = make([]SortKey, 0)
 		for x := range vgMap {
@@ -79,11 +89,11 @@ func MatchSearch2(vgMap map[uint16]string, indexRoot *mpTrie.SearchTreeNode, buf
 			}
 			return false
 		})
-		end21 := time.Now().UnixMicro()
-		var sum1 uint64 = 0
-		var sum2 uint64 = 0
-		var sum3 uint64 = 0
-		var sum4 uint64 = 0
+		//end21 := time.Now().UnixMicro()
+		//var sum1 uint64 = 0
+		//var sum2 uint64 = 0
+		//var sum3 uint64 = 0
+		//var sum4 uint64 = 0
 		var resArr = make(utils.Inverted_index, 0)
 		var prePos uint16 = 0
 		var nowPos uint16 = 0
@@ -97,27 +107,35 @@ func MatchSearch2(vgMap map[uint16]string, indexRoot *mpTrie.SearchTreeNode, buf
 				var invertIndex1 utils.Inverted_index
 				var invertIndex2 utils.Inverted_index
 				var invertIndex3 utils.Inverted_index
-				start21 := time.Now().UnixMicro()
-				invertIndexOffset, addrOffset, indexNode = SearchNodeAddrFromPersistentIndexTree(gramArr, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
-				if indexNode.Invtdlen() > 0 {
-					invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, buffer, invertedCache)
-				}
-				end22 := time.Now().UnixMicro()
-				sum1 += uint64(end22 - start21)
-				start22 := time.Now().UnixMicro()
-				invertIndex2 = mpTrie.SearchInvertedListFromChildrensOfCurrentNode(indexNode, invertIndex2, buffer, addrCache, invertedCache)
-				end23 := time.Now().UnixMicro()
-				sum2 += uint64(end23 - start22)
-				start23 := time.Now().UnixMicro()
-				if indexNode.Addrlen() > 0 {
-					addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, buffer, addrCache)
-					if indexNode != nil && len(addrOffsets) > 0 {
-						invertIndex3 = mpTrie.TurnAddr2InvertLists(addrOffsets, buffer, invertedCache)
+				//start21 := time.Now().UnixMicro()
+				invertIndexOffset, addrOffset, indexNode = SearchNodeAddrFromPersistentIndexTree(fileId, gramArr, indexRoot, 0, invertIndexOffset, addrOffset, indexNode)
+				if len(indexNode.InvtdCheck()) > 0 {
+					if _, ok := indexNode.InvtdCheck()[fileId]; ok {
+						if indexNode.InvtdCheck()[fileId].Invtdlen() > 0 {
+							invertIndex1 = mpTrie.SearchInvertedIndexFromCacheOrDisk(invertIndexOffset, fileId, filePtr, invertedCache)
+						}
 					}
 				}
-				end24 := time.Now().UnixMicro()
-				sum3 += uint64(end24 - start23)
-				start24 := time.Now().UnixMicro()
+				//end22 := time.Now().UnixMicro()
+				//sum1 += uint64(end22 - start21)
+				//start22 := time.Now().UnixMicro()
+				invertIndex2 = mpTrie.SearchInvertedListFromChildrensOfCurrentNode(indexNode, invertIndex2, fileId, filePtr, addrCache, invertedCache)
+				//end23 := time.Now().UnixMicro()
+				//sum2 += uint64(end23 - start22)
+				//start23 := time.Now().UnixMicro()
+				if len(indexNode.AddrCheck()) > 0 {
+					if _, ok := indexNode.AddrCheck()[fileId]; ok {
+						if indexNode.AddrCheck()[fileId].Addrlen() > 0 {
+							addrOffsets := mpTrie.SearchAddrOffsetsFromCacheOrDisk(addrOffset, fileId, filePtr, addrCache)
+							if indexNode != nil && len(addrOffsets) > 0 {
+								invertIndex3 = mpTrie.TurnAddr2InvertLists(addrOffsets, fileId, filePtr, invertedCache)
+							}
+						}
+					}
+				}
+				//end24 := time.Now().UnixMicro()
+				//sum3 += uint64(end24 - start23)
+				//start24 := time.Now().UnixMicro()
 				invertIndexes[0] = invertIndex1
 				invertIndexes[1] = invertIndex2
 				invertIndexes[2] = invertIndex3
@@ -158,34 +176,40 @@ func MatchSearch2(vgMap map[uint16]string, indexRoot *mpTrie.SearchTreeNode, buf
 						}
 					}
 				}
-				end25 := time.Now().UnixMicro()
-				sum4 += uint64(end25 - start24)
+				//end25 := time.Now().UnixMicro()
+				//sum4 += uint64(end25 - start24)
 			}
 		}
-		fmt.Println("sort and freq:", (end21-start1)/1000)
-		fmt.Println("sum1:", sum1/1000)
-		fmt.Println("sum2:", sum2/1000)
-		fmt.Println("sum3:", sum3/1000)
-		fmt.Println("sum4:", sum4/1000)
-		end2 := time.Now().UnixMicro()
-		fmt.Println("match cost time:", (end2-start1)/1000)
-		return mpTrie.MapToSlices(resArr)
+		//fmt.Println("sort and freq:", (end21-start1)/1000)
+		//fmt.Println("sum1:", sum1/1000)
+		//fmt.Println("sum2:", sum2/1000)
+		//fmt.Println("sum3:", sum3/1000)
+		//fmt.Println("sum4:", sum4/1000)
+		return mpTrie.InvertdToMap(resArr)
 	}
 }
 
-func SearchNodeAddrFromPersistentIndexTree(gramArr string, indexRoot *mpTrie.SearchTreeNode, i int, invertIndexOffset uint64, addrOffset uint64, indexNode *mpTrie.SearchTreeNode) (uint64, uint64, *mpTrie.SearchTreeNode) {
+func SearchNodeAddrFromPersistentIndexTree(fileId int, gramArr string, indexRoot *mpTrie.SearchTreeNode, i int, invertIndexOffset uint64, addrOffset uint64, indexNode *mpTrie.SearchTreeNode) (uint64, uint64, *mpTrie.SearchTreeNode) {
 	if indexRoot == nil {
 		return invertIndexOffset, addrOffset, indexNode
 	}
 	if i < len(gramArr)-1 && indexRoot.Children()[int(gramArr[i])] != nil {
-		invertIndexOffset, addrOffset, indexNode = SearchNodeAddrFromPersistentIndexTree(gramArr, indexRoot.Children()[int(gramArr[i])], i+1, invertIndexOffset, addrOffset, indexNode)
+		invertIndexOffset, addrOffset, indexNode = SearchNodeAddrFromPersistentIndexTree(fileId, gramArr, indexRoot.Children()[int(gramArr[i])], i+1, invertIndexOffset, addrOffset, indexNode)
 	}
 	if i == len(gramArr)-1 && indexRoot.Children()[int(gramArr[i])] != nil {
-		if indexRoot.Children()[int(gramArr[i])].Invtdlen() > 0 {
-			invertIndexOffset = indexRoot.Children()[int(gramArr[i])].InvtdInfo().IvtdblkOffset()
+		if len(indexRoot.Children()[int(gramArr[i])].InvtdCheck()) > 0 {
+			if _, ok := indexRoot.Children()[int(gramArr[i])].InvtdCheck()[fileId]; ok {
+				if indexRoot.Children()[int(gramArr[i])].InvtdCheck()[fileId].Invtdlen() > 0 {
+					invertIndexOffset = indexRoot.Children()[int(gramArr[i])].InvtdCheck()[fileId].IvtdblkOffset()
+				}
+			}
 		}
-		if indexRoot.Children()[int(gramArr[i])].Addrlen() > 0 {
-			addrOffset = indexRoot.Children()[int(gramArr[i])].AddrInfo().AddrblkOffset()
+		if len(indexRoot.Children()[int(gramArr[i])].AddrCheck()) > 0 {
+			if _, ok := indexRoot.Children()[int(gramArr[i])].AddrCheck()[fileId]; ok {
+				if indexRoot.Children()[int(gramArr[i])].AddrCheck()[fileId].Addrlen() > 0 {
+					addrOffset = indexRoot.Children()[int(gramArr[i])].AddrCheck()[fileId].AddrblkOffset()
+				}
+			}
 		}
 		indexNode = indexRoot.Children()[int(gramArr[i])]
 	}

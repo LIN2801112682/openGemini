@@ -30,13 +30,47 @@ type CLVIndex struct {
 	indexTreeMap map[MeasurementAndFieldKey]*DicAndIndex
 	indexType    CLVIndexType
 	search       *CLVSearch
+	path         string
 }
 
-func NewCLVIndex(indexType CLVIndexType) *CLVIndex {
+func (clvIndex *CLVIndex) IndexTreeMap() map[MeasurementAndFieldKey]*DicAndIndex {
+	return clvIndex.indexTreeMap
+}
+
+func (clvIndex *CLVIndex) SetIndexTreeMap(indexTreeMap map[MeasurementAndFieldKey]*DicAndIndex) {
+	clvIndex.indexTreeMap = indexTreeMap
+}
+
+func (clvIndex *CLVIndex) IndexType() CLVIndexType {
+	return clvIndex.indexType
+}
+
+func (clvIndex *CLVIndex) SetIndexType(indexType CLVIndexType) {
+	clvIndex.indexType = indexType
+}
+
+func (clvIndex *CLVIndex) Search() *CLVSearch {
+	return clvIndex.search
+}
+
+func (clvIndex *CLVIndex) SetSearch(search *CLVSearch) {
+	clvIndex.search = search
+}
+
+func (clvIndex *CLVIndex) Path() string {
+	return clvIndex.path
+}
+
+func (clvIndex *CLVIndex) SetPath(path string) {
+	clvIndex.path = path
+}
+
+func NewCLVIndex(indexType CLVIndexType, path string) *CLVIndex {
 	return &CLVIndex{
 		indexTreeMap: make(map[MeasurementAndFieldKey]*DicAndIndex),
 		indexType:    indexType,
 		search:       NewCLVSearch(indexType),
+		path:         path,
 	}
 }
 
@@ -81,6 +115,22 @@ type DicAndIndex struct {
 	index *CLVIndexNode
 }
 
+func (d *DicAndIndex) Dic() *CLVDictionary {
+	return d.dic
+}
+
+func (d *DicAndIndex) SetDic(dic *CLVDictionary) {
+	d.dic = dic
+}
+
+func (d *DicAndIndex) Index() *CLVIndexNode {
+	return d.index
+}
+
+func (d *DicAndIndex) SetIndex(index *CLVIndexNode) {
+	d.index = index
+}
+
 func NewDicAndIndex() *DicAndIndex {
 	return &DicAndIndex{
 		dic:   NewCLVDictionary(),
@@ -93,23 +143,23 @@ func (clvIndex *CLVIndex) CreateCLVIndex(log string, tsid uint64, timeStamp int6
 	if _, ok := clvIndex.indexTreeMap[measurementAndFieldKey]; !ok {
 		clvIndex.indexTreeMap[measurementAndFieldKey] = NewDicAndIndex() //Start with the configuration dictionary
 	}
-	if DicIndex != MAXDICBUFFER {
-		clvIndex.indexTreeMap[measurementAndFieldKey].dic.CreateDictionaryIfNotExists(log, tsid, timeStamp, clvIndex.indexType)
+	if DicIndex != MAXDICBUFFER { //todo
+		clvIndex.indexTreeMap[measurementAndFieldKey].dic.CreateDictionaryIfNotExists(log, tsid, timeStamp, clvIndex.indexType, clvIndex.path)
 	}
-	clvIndex.indexTreeMap[measurementAndFieldKey].index.CreateCLVIndexIfNotExists(log, tsid, timeStamp, clvIndex.indexType, clvIndex.indexTreeMap[measurementAndFieldKey].dic.DicType, *clvIndex.indexTreeMap[measurementAndFieldKey].dic)
+	clvIndex.indexTreeMap[measurementAndFieldKey].index.CreateCLVIndexIfNotExists(log, tsid, timeStamp, clvIndex.indexType, clvIndex.indexTreeMap[measurementAndFieldKey].dic.DicType, *clvIndex.indexTreeMap[measurementAndFieldKey].dic, clvIndex.path)
 }
 
-func (clvIndex *CLVIndex) CLVSearch(measurementName string, fieldKey string, queryType QuerySearch, queryStr string) []utils.SeriesId {
-	var res []utils.SeriesId
+func (clvIndex *CLVIndex) CLVSearch(measurementName string, fieldKey string, queryType QuerySearch, queryStr string) map[utils.SeriesId]struct{} {
+	var res map[utils.SeriesId]struct{}
 	option := NewQueryOption(measurementName, fieldKey, queryType, queryStr)
 	measurementAndFieldKey := NewMeasurementAndFieldKey(measurementName, fieldKey)
 	if _, ok := clvIndex.indexTreeMap[measurementAndFieldKey]; ok {
 		dic := clvIndex.indexTreeMap[measurementAndFieldKey].dic
 		indexType := clvIndex.indexType
-		if clvIndex.search.size == 0 {
-			clvIndex.search.SearchIndexTreeFromDisk(measurementName, fieldKey, clvIndex.indexType)
+		if len(clvIndex.search.fileNames) == 0 {
+			clvIndex.search.SearchIndexTreeFromDisk(clvIndex.indexType, measurementName, fieldKey, clvIndex.path)
 		}
-		res = CLVSearchIndex(indexType, dic.DicType, option, dic, clvIndex.search.indexRoots, clvIndex.search.buffer, clvIndex.search.addrCache, clvIndex.search.invtdCache, clvIndex.search.logTree)
+		res = CLVSearchIndex(indexType, dic.DicType, option, dic, clvIndex.search.indexRoots, clvIndex.search.filePtr, clvIndex.search.addrCache, clvIndex.search.invtdCache, clvIndex.search.logTree, clvIndex.search.tokenMap)
 	} else {
 		res = nil
 	}

@@ -52,11 +52,12 @@ func GenerateIndexTree(logs []utils.LogSeries, qmin int, qmax int, logTreeMax in
 		if len(gram) > qmin && len(gram) <= qmax { //Generate all gramIndex entries between qmin+1 - len(gram)
 			GramSubs = make([]SubGramOffset, 0)
 			GenerateQmin2QmaxGrams(gram, qmin)
-			indexTree.InsertOnlyGramIntoIndexTree(GramSubs, addr)
+			indexTree.InsertOnlyGramIntoIndexTree(GramSubs, addr, len(invert_index))
 		}
 	}
 	indexTree.cout = len(logs)
 	//indexTree.PrintIndexTree()
+	indexTree.UpdateIndexRootFrequency()
 	fmt.Println(indexTree.cout)
 	return indexTree, indexTree.root, logTree
 }

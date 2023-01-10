@@ -8,7 +8,49 @@ import (
 	"strings"
 )
 
+/**
+* @ Author: Yaixihn
+* @ Dec:map+trie落盘
+* @ Date: 2022/9/18 13:40
+ */
+
+/*func writeTokenFuzzyPrefixToFile(tree *tokenIndex.IndexTree, fuzzyfile, filename string) error {
+	root := tree.Root()
+	fb := make([]byte,0)
+	file, err := os.OpenFile(fuzzyfile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+	file.WriteString(filename+",")
+	for _,token := range  root.Children(){
+		data := token.Data()
+		gram := token.PrefixGram()
+		if gram!=nil{
+			fb = append(fb,[]byte(data)...)
+			fb = append(fb,'$')
+			buf := new(bytes.Buffer)
+			encoder := gob.NewEncoder(buf)
+			err := encoder.Encode(gram)
+			if err != nil {
+				return fmt.Errorf("encode TokenFuzzyPrefix is failed.")
+			}
+			fb = append(fb, buf.Bytes()...)
+			fb = append(fb, '#')
+		}
+	}
+	_, err = file.Write(fb)
+	if err != nil {
+		return fmt.Errorf("file write fail when fuzzyPrefixGram serialize")
+	}
+	file.WriteString("<")
+	return nil
+}*/
+
 func SerializeTokenIndexToFile(tree *tokenIndex.IndexTree, filename string) {
+	//err := writeTokenFuzzyPrefixToFile(tree, fuzzyfile, filename)
+	//if err != nil {
+	//	fmt.Println(err)
+	//}
 	fb := make([]byte, 0)
 	res, mp_invertedblk, res_addrctr := getIndexTokenData(tree)
 	var addrTotal uint64
@@ -24,7 +66,7 @@ func SerializeTokenIndexToFile(tree *tokenIndex.IndexTree, filename string) {
 	for _, data := range ivtdIdxData {
 		invetdblk := mp_invertedblk[data]
 		invtdblkToOff[invetdblk] = start_invtblk
-		hash := invetdblk.HashInvertedBlk()
+		hash := HashInvertedBlk(invetdblk)
 		hashToOff[hash] = start_invtblk
 		tmpbytes := serializeInvertedListBlk(invetdblk)
 		fb = append(fb, tmpbytes...)
@@ -86,7 +128,7 @@ func SerializeTokenIndexToFile(tree *tokenIndex.IndexTree, filename string) {
 	fb = append(fb, invtdTotalbyte...)
 	fb = append(fb, addrTotalbyte...)
 
-	file, err := os.Create(filename)
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 	defer file.Close()
 	if err != nil {
 		fmt.Println("file open fail when mptrie serialize.", err)
@@ -100,6 +142,7 @@ func SerializeTokenIndexToFile(tree *tokenIndex.IndexTree, filename string) {
 	}
 
 }
+
 
 //get more than qmin index grams,and write the file
 func getIndexTokenData(tree *tokenIndex.IndexTree) (map[string]*SerializeObj, map[string]*InvertedListBlock, map[string][]*AddrCenterStatus) {
@@ -132,7 +175,7 @@ func getIndexTokenData(tree *tokenIndex.IndexTree) (map[string]*SerializeObj, ma
 			min, max := GetMaxAndMinTime(inverted)
 			addrEntry := NewAddrListEntry(0)
 			invertedEntry := NewInvertedListEntry(min, max, 0)
-			obj := NewSerializeObj(temp,freq, arrlen, addrEntry, invtdlen, invertedEntry)
+			obj := NewSerializeObj(temp, freq,arrlen, addrEntry, invtdlen, invertedEntry)
 			res[temp] = obj
 			//fmt.Println(temp, node.AddrOffset())
 		}
@@ -150,3 +193,4 @@ func getIndexTokenData(tree *tokenIndex.IndexTree) (map[string]*SerializeObj, ma
 	dfs(root, path)
 	return res, res_invetedblk, res_addrCntStatus
 }
+

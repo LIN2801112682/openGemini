@@ -16,9 +16,11 @@ limitations under the License.
 package gramRegexQuery
 
 import (
+	"fmt"
 	"github.com/openGemini/openGemini/lib/mpTrie"
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
+	"os"
 	"strings"
 	"time"
 )
@@ -106,16 +108,26 @@ func RegexStandardization(re string) string {
 	return re
 }
 
-func RegexSearch(re string, trietree *gramClvc.TrieTree, qmin int, index *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []utils.SeriesId {
-	//fmt.Println(re + " : ")
-	//start := time.Now().UnixMicro()
+func RegexSearch(re string, trietree *gramClvc.TrieTree, qmin int, index *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+	fmt.Println("正则表达式:", re)
+	start := time.Now().UnixMicro()
+	var resArr = make(map[utils.SeriesId]struct{}, 0)
+	for fileId, _ := range filePtr {
+		resArr = utils.Or(resArr, RegexSearch1(re, trietree, qmin, index, fileId, filePtr, addrCache, invertedCache))
+	}
+	end := time.Now().UnixMicro()
+	fmt.Println("总用时:", end-start)
+	fmt.Println("结果数:", len(resArr))
+	return resArr
+}
+
+func RegexSearch1(re string, trietree *gramClvc.TrieTree, qmin int, index *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
 	split := strings.Contains(re, ".")
-	result := make([]utils.SeriesId, 0)
+	result := make(map[utils.SeriesId]struct{}, 0)
 	if !split {
-		sidlist := MatchRegex(re, trietree, index, buffer, addrCache, invertedCache)
-		result = make([]utils.SeriesId, len(sidlist))
-		for i := 0; i < len(sidlist); i++ {
-			result[i] = sidlist[i].sid
+		sidmap := MatchRegex(re, trietree, index, fileId, filePtr, addrCache, invertedCache)
+		for i := 0; i < len(sidmap); i++ {
+			result[sidmap[i].sid] = struct{}{}
 		}
 	} else {
 		isnoterror, rplist := GenerateRegexPlusList(re, qmin)
@@ -123,112 +135,34 @@ func RegexSearch(re string, trietree *gramClvc.TrieTree, qmin int, index *mpTrie
 			//fmt.Println("syntax error !")
 			return nil
 		} else {
-			resultmap := MatchRegexPlusList(rplist, trietree, index, buffer, addrCache, invertedCache)
-			result = make([]utils.SeriesId, len(resultmap))
-			index := 0
-			for key := range resultmap {
-				result[index] = key
-				index++
+			sidmap := MatchRegexPlusList(rplist, trietree, index, fileId, filePtr, addrCache, invertedCache)
+			for key := range sidmap {
+				result[key] = struct{}{}
 			}
-			//QuickSort2(result)
 		}
 	}
-	//end := time.Now().UnixMicro()
-	//fmt.Println("总计花费时间：", end-start)
 	return result
 }
 
-func MatchRegex(re string, trietree *gramClvc.TrieTree, index *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []*SeriesIdWithPosition {
-	//gramnum := 0
-	//ctime := int64(0)
-	//mtime := int64(0)
-	//srtime := int64(0)
-	//ltime := int64(0)
-	//constart := time.Now().UnixMicro()
+func MatchRegex(re string, trietree *gramClvc.TrieTree, index *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []*SeriesIdWithPosition {
 	re = RegexStandardization(re)
 	regex := NewRegex(re, trietree)
-	//conend := time.Now().UnixMicro()
-	//ctime = conend - constart
-
-	//lstart := time.Now().UnixMicro()
-	regex.LoadInvertedIndex(index, buffer, addrCache, invertedCache)
-	//	lend := time.Now().UnixMicro()
-	//ltime = lend - lstart
-
-	//matchstart := time.Now().UnixMicro()
+	regex.LoadInvertedIndex(index, fileId, filePtr, addrCache, invertedCache)
 	sidlist := regex.Match()
-	//matchend := time.Now().UnixMicro()
-	//mtime = matchend - matchstart
-
-	//sortstart := time.Now().UnixMicro()
 	sidlist = SortAndRemoveDuplicate(sidlist)
-	//sortend := time.Now().UnixMicro()
-	//srtime = sortend - sortstart
-	//fmt.Print("count : ")
-	//fmt.Println(len(sidlist))
-
-	//for i := 0; i < len(sidlist); i++ {
-	//	sidlist[i].Print()
-	//}
-
-	//gramnum = len(regex.gnfa.edges)
-	//fmt.Println("构建自动机用时：", ctime)
-	//fmt.Println("读取索引用时：", ltime)
-	//fmt.Println("匹配用时：", mtime)
-	//fmt.Println("排序去重用时：", srtime)
-	//fmt.Println("总计grams数量：", gramnum)
 	return sidlist
 }
 
-func MatchRegexPlusList(regexpluslist []*RegexPlus, trietree *gramClvc.TrieTree, indextree *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId][]uint16 {
-	gramnum := 0
-	//ctime := int64(0)
-	mtime := int64(0)
-	srtime := int64(0)
-	//mergetime := int64(0)
-	ltime := int64(0)
+func MatchRegexPlusList(regexpluslist []*RegexPlus, trietree *gramClvc.TrieTree, indextree *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId][]uint16 {
 	for i := 0; i < len(regexpluslist); i++ {
-		//constart := time.Now().UnixMicro()
 		regexpluslist[i].re = RegexStandardization(regexpluslist[i].re)
 		regexpluslist[i].GenerateGNFA(trietree)
-		//conend := time.Now().UnixMicro()
-		//ctime = conend - constart
-
-		lstart := time.Now().UnixMicro()
-		regexpluslist[i].gnfa.LoadInvertedIndex(indextree, buffer, addrCache, invertedCache)
-		lend := time.Now().UnixMicro()
-		ltime += lend - lstart
-
-		matchstart := time.Now().UnixMicro()
+		regexpluslist[i].gnfa.LoadInvertedIndex(indextree, fileId, filePtr, addrCache, invertedCache)
 		sidlist := regexpluslist[i].gnfa.Match()
-		matchend := time.Now().UnixMicro()
-		mtime += matchend - matchstart
-
-		sortstart := time.Now().UnixMicro()
 		sidlist = SortAndRemoveDuplicate(sidlist)
-		sortend := time.Now().UnixMicro()
-		srtime += sortend - sortstart
-
 		regexpluslist[i].sidlist = sidlist
-		gramnum += len(regexpluslist[i].gnfa.edges)
 	}
-
-	//mergestart := time.Now().UnixMicro()
 	resultlist := MergeRegexPlus(regexpluslist)
-	//resultlist := MergeSidList(sidlist)
-	//mergeend := time.Now().UnixMicro()
-	//mergetime = mergeend - mergestart
-	//fmt.Println("-----------------------------------")
-	//
-	//fmt.Println("-----------------------------------")
-	//fmt.Print("count : ")
-	//fmt.Println(len(resultlist))
-	//fmt.Println("构建自动机用时：", ctime)
-	//fmt.Println("读取索引用时：", ltime)
-	//fmt.Println("匹配用时：", mtime)
-	//fmt.Println("排序去重用时：", srtime)
-	//fmt.Println("归并用时：", mergetime)
-	//fmt.Println("总计grams数量：", gramnum)
 	return resultlist
 
 }
@@ -301,8 +235,8 @@ func CanMergeWithOp(lastend uint16, nextstart uint16, op uint8) bool {
 	}
 }
 
-func (re *Regex) LoadInvertedIndex(index *mpTrie.SearchTreeNode, buffer []byte, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) {
-	re.gnfa.LoadInvertedIndex(index, buffer, addrCache, invertedCache)
+func (re *Regex) LoadInvertedIndex(index *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) {
+	re.gnfa.LoadInvertedIndex(index, fileId, filePtr, addrCache, invertedCache)
 }
 
 func (re *Regex) Match() []*SeriesIdWithPosition {
@@ -312,7 +246,6 @@ func (re *Regex) Match() []*SeriesIdWithPosition {
 }
 
 func SortAndRemoveDuplicate(sidlist []*SeriesIdWithPosition) []*SeriesIdWithPosition {
-	//QuickSort(sidlist)
 	sidlist = RemoveDuplicate(sidlist)
 	return sidlist
 }

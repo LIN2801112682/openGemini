@@ -89,9 +89,10 @@ func (tree *IndexTree) InsertIntoIndexTree(gram string, inverted_index utils.Inv
 			currentNode := NewIndexTreeNode(string(gram[i]))
 			node.children[gram[i]] = currentNode
 			node = currentNode
+			node.frequency = len(inverted_index)
 		} else {
 			node = node.children[uint8(childIndex)]
-			node.frequency++
+			node.frequency += len(inverted_index)
 		}
 		if i == len(gram)-1 { //Leaf node, need to hook up linkedList
 			node.isleaf = true
@@ -102,7 +103,7 @@ func (tree *IndexTree) InsertIntoIndexTree(gram string, inverted_index utils.Inv
 	return addr
 }
 
-func (tree *IndexTree) InsertOnlyGramIntoIndexTree(gramSubs []SubGramOffset, addr *IndexTreeNode) {
+func (tree *IndexTree) InsertOnlyGramIntoIndexTree(gramSubs []SubGramOffset, addr *IndexTreeNode, invert_index_len int) {
 	var childIndex int8 = -1
 	for k := 0; k < len(gramSubs); k++ {
 		gram := gramSubs[k].subGram
@@ -114,9 +115,10 @@ func (tree *IndexTree) InsertOnlyGramIntoIndexTree(gramSubs []SubGramOffset, add
 				currentNode := NewIndexTreeNode(string(gram[i]))
 				node.children[gram[i]] = currentNode
 				node = currentNode
+				node.frequency = invert_index_len
 			} else {
 				node = node.children[uint8(childIndex)]
-				node.frequency++
+				node.frequency += invert_index_len
 			}
 			if i == len(gram)-1 { //Leaf node, need to hook up linkedList
 				node.isleaf = true
@@ -141,7 +143,7 @@ func (tree *IndexTree) InsertStringIntoIndexTree(gram string) {
 			node = currentNode
 		} else { //There is this node in the ChildrenMap, so childrenIndex is the position of the node in the ChildrenMap
 			node = node.children[uint8(childIndex)]
-			node.frequency++
+			node.frequency++ //todo
 		}
 		if i >= qmin-1 { //As long as the gram length is greater than qmin - 1, it is a leaf node
 			node.isleaf = true
@@ -161,19 +163,19 @@ func (tree *IndexTree) UpdateIndexRootFrequency() {
 }
 
 // regexTestCLVL need
-func (indextree *IndexTree) ToDicTree() *gramClvc.TrieTree {
-	r := indextree.root.ConvertNode()
-	trietree := gramClvc.NewTrieTree(indextree.qmin, indextree.qmax)
+func (tree *IndexTree) ToDicTree() *gramClvc.TrieTree {
+	r := tree.root.ConvertNode()
+	trietree := gramClvc.NewTrieTree(tree.qmin, tree.qmax)
 	trietree.SetRoot(r)
 	return trietree
 }
 
 // regexTestCLVL need
-func (indextreenode *IndexTreeNode) ConvertNode() *gramClvc.TrieTreeNode {
-	node := gramClvc.NewTrieTreeNode(indextreenode.data)
-	node.SetIsleaf(indextreenode.isleaf)
-	for i := range indextreenode.children {
-		ctrienode := indextreenode.children[i].ConvertNode()
+func (tree *IndexTreeNode) ConvertNode() *gramClvc.TrieTreeNode {
+	node := gramClvc.NewTrieTreeNode(tree.data)
+	node.SetIsleaf(tree.isleaf)
+	for i := range tree.children {
+		ctrienode := tree.children[i].ConvertNode()
 		node.Children()[i] = ctrienode
 	}
 	return node
@@ -190,6 +192,10 @@ func (tree *IndexTree) GetMemorySizeOfIndexTree() {
 	fmt.Println(InvertedSize)
 	fmt.Println("==================ADDRSIZE=======================")
 	fmt.Println(AddrSize)
+	fmt.Println("=====================NODES=======================")
+	fmt.Println(Nodes)
+	fmt.Println("==================POSITIONLIST===================")
+	fmt.Println(PositionList)
 }
 
 func (root *IndexTree) SearchTermLengthAndTermAvgLenFromIndexTree() {

@@ -1,77 +1,41 @@
 package mpTrie
 
+import (
+	"hash/crc32"
+)
+
 type AddrNode struct {
-	key   uint64
+	key   uint32
 	value *AddrListBlock
 	prev  *AddrNode
 	next  *AddrNode
 }
 
-func NewAddrNode(key uint64, value *AddrListBlock) *AddrNode {
+func NewAddrNode(key uint32, value *AddrListBlock) *AddrNode {
 	return &AddrNode{key: key, value: value}
 }
 
 type AddrCache struct {
 	capicity   int
 	used       int
-	blk        map[uint64]*AddrNode
+	blk        map[uint32]*AddrNode
 	list       *AddrNode
 	head, tail *AddrNode
 }
 
-func (this *AddrCache) Capicity() int {
-	return this.capicity
-}
-
-func (this *AddrCache) SetCapicity(capicity int) {
-	this.capicity = capicity
-}
-
-func (this *AddrCache) Used() int {
-	return this.used
-}
-
-func (this *AddrCache) SetUsed(used int) {
-	this.used = used
-}
-
-func (this *AddrCache) Blk() map[uint64]*AddrNode {
+func (this *AddrCache) Blk() map[uint32]*AddrNode {
 	return this.blk
 }
 
-func (this *AddrCache) SetBlk(blk map[uint64]*AddrNode) {
+func (this *AddrCache) SetBlk(blk map[uint32]*AddrNode) {
 	this.blk = blk
-}
-
-func (this *AddrCache) List() *AddrNode {
-	return this.list
-}
-
-func (this *AddrCache) SetList(list *AddrNode) {
-	this.list = list
-}
-
-func (this *AddrCache) Head() *AddrNode {
-	return this.head
-}
-
-func (this *AddrCache) SetHead(head *AddrNode) {
-	this.head = head
-}
-
-func (this *AddrCache) Tail() *AddrNode {
-	return this.tail
-}
-
-func (this *AddrCache) SetTail(tail *AddrNode) {
-	this.tail = tail
 }
 
 func InitAddrCache(capicity int) *AddrCache {
 	cache := &AddrCache{
 		capicity: capicity,
 		used:     0,
-		blk:      make(map[uint64]*AddrNode),
+		blk:      make(map[uint32]*AddrNode),
 		head:     NewAddrNode(0, nil),
 		tail:     NewAddrNode(0, nil),
 	}
@@ -80,11 +44,19 @@ func InitAddrCache(capicity int) *AddrCache {
 	return cache
 }
 
-func (this *AddrCache) Put(offset uint64, blk *AddrListBlock) {
-	node, ok := this.blk[offset]
+func getcacheHash(offset uint64, fileid int) uint32 {
+	offbytes, _ := IntToBytes(int(offset), 8)
+	fileIdbytes, _ := IntToBytes(fileid, 8)
+	offbytes = append(offbytes, fileIdbytes...)
+	hashcode := crc32.ChecksumIEEE(offbytes)
+	return hashcode
+} 
+func (this *AddrCache) Put(offset uint64,fileid int, blk *AddrListBlock) {
+	hash := getcacheHash(offset, fileid)
+	node, ok := this.blk[hash]
 	if !ok {
-		tmp := NewAddrNode(offset, blk)
-		this.blk[offset] = tmp
+		tmp := NewAddrNode(hash, blk)
+		this.blk[hash] = tmp
 		this.AddToHead(tmp)
 		this.UpSize()
 		for this.used > this.capicity {
@@ -100,8 +72,9 @@ func (this *AddrCache) Put(offset uint64, blk *AddrListBlock) {
 	}
 }
 
-func (this *AddrCache) Get(offset uint64) *AddrListBlock {
-	if node, ok := this.blk[offset]; ok {
+func (this *AddrCache) Get(offset uint64,fileid int) *AddrListBlock {
+	hash := getcacheHash(offset, fileid)
+	if node, ok := this.blk[hash]; ok {
 		this.DeleteEntry(node)
 		this.AddToHead(node)
 		return node.value

@@ -15,6 +15,8 @@ limitations under the License.
 */
 package gramIndex
 
+import "fmt"
+
 type LogTree struct {
 	qmax int
 	root *LogTreeNode
@@ -60,4 +62,13 @@ func (tree *LogTree) InsertIntoTrieTreeLogTree(gram string) {
 
 func (tree *LogTree) PrintTree() {
 	tree.root.PrintTreeNode(0)
+}
+
+func (tree *LogTree) GetMemorySizeOfLogTree() {
+	tree.root.GetMemorySizeOfLogTreeTheoretical(0)
+	fmt.Println("==============logTree Theoretical MemoUsed===============")
+	fmt.Println(TheoreticalMemoUsedLogTree)
+	tree.root.GetMemorySizeOfLogTreeExact(0)
+	fmt.Println("==============logTree Exact MemoUsed=====================")
+	fmt.Println(ExactMemoUsedLogTree)
 }

@@ -88,9 +88,10 @@ func (tree *IndexTree) InsertIntoIndexTree(token []string, inverted_index utils.
 			currentNode := NewIndexTreeNode(str)
 			node.children[utils.StringToHashCode(str)] = currentNode
 			node = currentNode
+			node.frequency = len(inverted_index)
 		} else {
 			node = node.children[childIndex]
-			node.frequency++
+			node.frequency += len(inverted_index)
 		}
 		if i == len(token)-1 {
 			node.isleaf = true
@@ -101,7 +102,7 @@ func (tree *IndexTree) InsertIntoIndexTree(token []string, inverted_index utils.
 	return addr
 }
 
-func (tree *IndexTree) InsertOnlyTokenIntoIndexTree(tokenSubs []SubTokenOffset, addr *IndexTreeNode) {
+func (tree *IndexTree) InsertOnlyTokenIntoIndexTree(tokenSubs []SubTokenOffset, addr *IndexTreeNode, invert_index_len int) {
 	var childIndex = -1
 	for k := 0; k < len(tokenSubs); k++ {
 		token := tokenSubs[k].subToken
@@ -113,9 +114,10 @@ func (tree *IndexTree) InsertOnlyTokenIntoIndexTree(tokenSubs []SubTokenOffset, 
 				currentNode := NewIndexTreeNode(str)
 				node.children[utils.StringToHashCode(str)] = currentNode
 				node = currentNode
+				node.frequency = invert_index_len
 			} else {
 				node = node.children[childIndex]
-				node.frequency++
+				node.frequency += invert_index_len
 			}
 			if i == len(token)-1 {
 				node.isleaf = true
@@ -155,6 +157,13 @@ func (tree *IndexTree) PrintIndexTree() {
 	tree.root.PrintIndexTreeNode(0)
 }
 
+func (tree *IndexTree) UpdateIndexRootFrequency() {
+	for _, child := range tree.root.children {
+		tree.root.frequency += child.frequency
+	}
+	tree.root.frequency--
+}
+
 func (tree *IndexTree) GetMemorySizeOfIndexTree() {
 	tree.root.GetMemorySizeOfIndexTreeTheoretical(0)
 	fmt.Println("==============Theoretical MemoUsed===============")
@@ -166,6 +175,10 @@ func (tree *IndexTree) GetMemorySizeOfIndexTree() {
 	fmt.Println(InvertedSize)
 	fmt.Println("==================ADDRSIZE=======================")
 	fmt.Println(AddrSize)
+	fmt.Println("=====================NODES=======================")
+	fmt.Println(Nodes)
+	fmt.Println("==================POSITIONLIST===================")
+	fmt.Println(PositionList)
 }
 
 func (root *IndexTree) SearchTermLengthAndTermAvgLenFromIndexTree() {

@@ -1,12 +1,14 @@
 package mpTrie
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"github.com/openGemini/openGemini/lib/utils"
 	"sort"
 )
 
-//serialize to file in bytes array format
+//serialize to file in bytes array formats
 func serializeInvertedListBlk(invtdblk *InvertedListBlock) []byte {
 	res := make([]byte, 0)
 	// size  store
@@ -17,69 +19,39 @@ func serializeInvertedListBlk(invtdblk *InvertedListBlock) []byte {
 		return nil
 	}
 	//block
-	blk := invtdblk.Blk()
-	for _, item := range blk {
-		b := serializeInvertedItem(item)
-		res = append(res, b...)
+	blk := invtdblk.Mpblk()
+	mpbyte, err := EncodemapByGob(blk)
+	if err != nil {
+		fmt.Println(err)
+		return nil
 	}
+	res = append(res,mpbyte...)
 	return res
 }
-func serializeInvertedItem(item *InvertedItem) []byte {
-	res := make([]byte, 0)
-	// record the size in the start position
-	itemsize, err := IntToBytes(int(item.Size()), stdlen)
-	res = append(res, itemsize...)
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
-	itemTsid, err := IntToBytes(int(item.Tsid()), stdlen)
-	res = append(res, itemTsid...)
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
-	itemTime, err := IntToBytes(int(item.Timestamp()), stdlen)
-	res = append(res, itemTime...)
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
-	pos := item.PosBlock()
-	tmp := make([]byte, 0)
-	for _, num := range pos {
-		n, err := IntToBytes(int(num), 2)
-		tmp = append(tmp, n...)
-		if err != nil {
-			fmt.Println(err)
-			return nil
-		}
-	}
-	res = append(res, tmp...)
 
-	return res
+
+func EncodemapByGob(inverted map[utils.SeriesId][]uint16) ([]byte,error){
+	buf := new(bytes.Buffer)
+	encoder := gob.NewEncoder(buf)
+	err := encoder.Encode(inverted)
+	if err != nil {
+		return nil,fmt.Errorf("encodeInvertedMap ERROR.")
+	}
+	return buf.Bytes(),nil
 }
 
 //turn to file layout
 func encodeInvertedBlk(inverted map[utils.SeriesId][]uint16) *InvertedListBlock {
-	var total uint64 = 0
-	res := new(InvertedListBlock)
-	blk := make([]*InvertedItem, 0)
-	for s, pos := range inverted {
-		tmp := getInvtdItemSize(pos)
-		item := NewInvertedItem(s.Id, s.Time, pos, tmp)
-		total += tmp + DEFAULT_SIZE
-		blk = append(blk, item)
+	buf,err := EncodemapByGob(inverted)
+	if err!=nil{
+		fmt.Println(err)
+		return nil
 	}
-	res = NewInvertedListBlock(blk, total)
-	return res
+	size := len(buf)
+	blk :=  InitInvertedListBlock(inverted, uint64(size))
+	return blk
 }
-func getInvtdItemSize(pos []uint16) uint64 {
-	//size of bytes
-	sidstd, timestd := 64/8, 64/8 //sid and time is int64
-	posstd := 16 / 8              //pos item is uint16
-	return uint64(sidstd + timestd + len(pos)*posstd)
-}
+
 
 func GetMaxAndMinTime(index map[utils.SeriesId][]uint16) (min, max int64) {
 	sidArr := make([]utils.SeriesId, 0)

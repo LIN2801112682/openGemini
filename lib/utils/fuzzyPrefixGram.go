@@ -15,37 +15,29 @@ limitations under the License.
 */
 package utils
 
-type SeriesId struct {
-	Id   uint64
-	Time int64
+type FuzzyPrefixGram struct {
+	gram string
+	pos  int8
 }
 
-func NewSeriesId(id uint64, t int64) SeriesId {
-	return SeriesId{
-		Id:   id,
-		Time: t,
+func NewFuzzyPrefixGram(gram string, pos int8) FuzzyPrefixGram {
+	return FuzzyPrefixGram{
+		gram: gram,
+		pos:  pos,
 	}
 }
-
-func And(s1, s2 map[SeriesId]struct{}) map[SeriesId]struct{} {
-	result := make(map[SeriesId]struct{})
-	for key, _ := range s2 {
-		if _, ok := s1[key]; !ok {
-			result[key] = struct{}{}
-		}
-	}
-	return result
+func (p *FuzzyPrefixGram) Gram() string {
+	return p.gram
 }
 
-func Or(s1, s2 map[SeriesId]struct{}) map[SeriesId]struct{} {
-	result := make(map[SeriesId]struct{})
-	for key, _ := range s1 {
-		result[key] = struct{}{}
-	}
-	for key, _ := range s2 {
-		if _, ok := result[key]; !ok {
-			result[key] = struct{}{}
-		}
-	}
-	return result
+func (p *FuzzyPrefixGram) SetGram(gram string) {
+	p.gram = gram
+}
+
+func (p *FuzzyPrefixGram) Pos() int8 {
+	return p.pos
+}
+
+func (p *FuzzyPrefixGram) SetPos(pos int8) {
+	p.pos = pos
 }

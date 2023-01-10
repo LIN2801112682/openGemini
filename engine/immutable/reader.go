@@ -1036,6 +1036,37 @@ func (l *Location) ReadData(filterOpts *FilterOptions, dst *record.Record) (*rec
 	return l.readData(filterOpts, dst)
 }
 
+func (l *Location) getCurSegMinMax() (int64, int64) {
+	minMaxSeg := l.meta.timeRange[l.segPos]
+	min, max := minMaxSeg.minTime(), minMaxSeg.maxTime()
+	return min, max
+}
+
+func (l *Location) OverlapsForFiltertime(filterTime []int64) (bool, int, int) {
+	if len(filterTime) == 0 {
+		return true, 0, 0
+	}
+	min, max := l.getCurSegMinMax()
+
+	startIndex := record.GetTimeRangeStartIndex(filterTime, 0, min)
+	// on the right of the filterTime boundary
+	if startIndex >= len(filterTime) || startIndex < 0 {
+		return false, 0, 0
+	}
+	// on the left of the filterTime boundary
+	if filterTime[startIndex] > max {
+		return false, 0, 0
+	}
+
+	// find the endIndex
+	endIndex := record.GetTimeRangeStartIndex(filterTime, 0, max)
+	if endIndex >= len(filterTime) {
+		endIndex = len(filterTime) - 1
+	}
+
+	return true, startIndex, endIndex
+}
+
 func (l *Location) readData(filterOpts *FilterOptions, dst *record.Record) (*record.Record, error) {
 	var rec *record.Record
 	var err error
@@ -1044,7 +1075,11 @@ func (l *Location) readData(filterOpts *FilterOptions, dst *record.Record) (*rec
 			l.nextSegment()
 			continue
 		}
-
+		isContinue, startIndex, endIndex := l.OverlapsForFiltertime(filterOpts.filterTime)
+		if isContinue == false {
+			l.nextSegment()
+			continue
+		}
 		rec, err = l.r.ReadAt(l.meta, l.segPos, dst, l.decs)
 		if err != nil {
 			return nil, err
@@ -1069,7 +1104,8 @@ func (l *Location) readData(filterOpts *FilterOptions, dst *record.Record) (*rec
 		}
 		// filter by fiterTime
 		if rec != nil {
-			rec = FilterByFilterTime(rec, filterOpts.filterTime)
+			//rec = FilterByFilterTime(rec, filterOpts.filterTime)
+			rec = FilterByFilterTime(rec, filterOpts.filterTime, startIndex, endIndex)
 		}
 	}
 
@@ -1137,14 +1173,14 @@ func AddRecordToOther(dstRecord, srcRecord *record.Record) {
 func RecordInitByOther(dstRecord, srcRecord *record.Record) {
 	schemaLen := len(srcRecord.Schema)
 	dstRecord.ColVals = make([]record.ColVal, schemaLen)
-	dstRecord.Schema = make([]record.Field, schemaLen)//这样对了吧
+	dstRecord.Schema = make([]record.Field, schemaLen) //这样对了吧
 	copy(dstRecord.Schema, srcRecord.Schema)
 	// colMeta
 	dstRecord.RecMeta = &record.RecMeta{}
 	dstRecord.ColMeta = append(dstRecord.ColMeta[:cap(dstRecord.ColMeta)], make([]record.ColMeta, len(dstRecord.Schema)-0)...)
 }
 
-func FilterByFilterTime(rec *record.Record, filterTime []int64) *record.Record {
+func FilterByFilterTime(rec *record.Record, filterTime []int64, startIndex, endIndex int) *record.Record { //, startIndex, endIndex int
 	lenFilter := len(filterTime)
 	if lenFilter == 0 {
 		return rec
@@ -1155,16 +1191,21 @@ func FilterByFilterTime(rec *record.Record, filterTime []int64) *record.Record {
 
 	newRec := record.Record{}
 	RecordInitByOther(&newRec, rec)
-	for i := range filterTime {
+	startPos := 0
+	for i := startIndex; i <= endIndex; i++ { //for i := startIndex; i <= endIndex; i++
 		if filterTime[i] < startTime || filterTime[i] > endTime {
 			continue
 		}
-		index := record.GetTimeRangeStartIndex(times, 0, filterTime[i])
+		index := record.GetTimeRangeStartIndex(times, startPos, filterTime[i])
+		startPos = index
 		sliceRec := record.Record{}
 		sliceRec.SliceFromRecord(rec, index, index+1)
 		AddRecordToOther(&newRec, &sliceRec)
 	}
 	// all data out of time ranges, continue to read data
+	if newRec.Times() == nil {
+		return nil
+	}
 	return &newRec
 }
 

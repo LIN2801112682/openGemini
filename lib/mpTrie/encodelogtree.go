@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+
+
 func SerializeLogTreeToFile(tree *gramIndex.LogTree, filename string) {
 	res := ""
 	var dfs func(node *gramIndex.LogTreeNode, path []string)
@@ -40,3 +42,4 @@ func SerializeLogTreeToFile(tree *gramIndex.LogTree, filename string) {
 		return
 	}
 }
+

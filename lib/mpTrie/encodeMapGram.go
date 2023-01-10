@@ -2,16 +2,92 @@ package mpTrie
 
 import (
 	"fmt"
+	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/lib/vGram/gramIndex"
+	"hash/crc32"
 	"os"
 	"sort"
 )
-
 var stdlen byte = DEFAULT_SIZE
+
+//get more than qmin index grams,and write the file
+func getIndexData(tree *gramIndex.IndexTree) (map[string]*SerializeObj, map[string]*InvertedListBlock, map[string][]*AddrCenterStatus) {
+	res := make(map[string]*SerializeObj)
+	res_invetedblk := make(map[string]*InvertedListBlock)
+	res_addrCntStatus := make(map[string][]*AddrCenterStatus)
+	var dfs func(node *gramIndex.IndexTreeNode, path []string)
+	dfs = func(node *gramIndex.IndexTreeNode, path []string) {
+		if node.Isleaf() == true {
+			temp := ""
+			for _, s := range path {
+				temp += s
+			}
+			//process addr
+			addrmp := node.AddrOffset()
+			arrlen := uint64(len(addrmp))
+			if arrlen != 0 {
+				res_addrCntStatus[temp] = encodeGramAddrCntStatus(addrmp) //addrlistblock
+			}
+
+			//process inverted
+			inverted := node.InvertedIndex()
+			invtdlen := uint64(len(inverted))
+			if invtdlen != 0 {
+				res_invetedblk[temp] = encodeInvertedBlk(inverted) //inverted list block
+			}
+			//obj
+			freq := node.Frequency()
+			min, max := GetMaxAndMinTime(inverted)
+			addrEntry := NewAddrListEntry(0)
+			invertedEntry := NewInvertedListEntry(min, max, 0)
+			obj := NewSerializeObj(temp,uint32(freq), arrlen, addrEntry, invtdlen, invertedEntry)
+			res[temp] = obj
+			//fmt.Println(temp, node.AddrOffset())
+		}
+		if len(node.Children()) == 0 {
+			return
+		}
+		for _, child := range node.Children() {
+			path = append(path, child.Data())
+			dfs(child, path)
+			path = path[:len(path)-1]
+		}
+	}
+	root := tree.Root()
+	path := make([]string, 0)
+	dfs(root, path)
+	return res, res_invetedblk, res_addrCntStatus
+}
+//invertedlistblock convert hashcode
+func HashInvertedBlk(invetdblk *InvertedListBlock) uint32 {
+	blk := invetdblk.Mpblk()
+	sidVec := make([]utils.SeriesId,0)
+	for key,_ := range blk{
+		sidVec = append(sidVec,key)
+	}
+	sort.Slice(sidVec, func(i, j int) bool {
+		if  sidVec[i].Id == sidVec[j].Id{
+			return  sidVec[i].Time < sidVec[j].Time
+		}
+		return sidVec[i].Id < sidVec[j].Id
+	})
+	res := make([]byte,0)
+	for _,sid := range sidVec{
+		pos := blk[sid]
+		idbyte, _ := IntToBytes(int(sid.Id),DEFAULT_SIZE)
+		timebyte, _ := IntToBytes(int(sid.Time),DEFAULT_SIZE)
+		fstpos,_ := IntToBytes(int(pos[0]),2)
+		res = append(res,idbyte...)
+		res = append(res,timebyte...)
+		res = append(res,fstpos...)
+	}
+	hashcode := crc32.ChecksumIEEE(res)
+	return hashcode
+}
 
 func SerializeGramIndexToFile(tree *gramIndex.IndexTree, filename string) {
 	fb := make([]byte, 0)
-	res, mp_invertedblk, res_addrctr := getGramIndexData(tree)
+	res, mp_invertedblk, res_addrctr := getIndexData(tree)
 	var addrTotal uint64
 	//1. serialize invertedlistblock
 	ivtdIdxData := make([]string, 0)
@@ -25,7 +101,7 @@ func SerializeGramIndexToFile(tree *gramIndex.IndexTree, filename string) {
 	for _, data := range ivtdIdxData {
 		invetdblk := mp_invertedblk[data]
 		invtdblkToOff[invetdblk] = start_invtblk
-		hash := invetdblk.HashInvertedBlk()
+		hash := HashInvertedBlk(invetdblk)
 		hashToOff[hash] = start_invtblk
 		tmpbytes := serializeInvertedListBlk(invetdblk)
 		fb = append(fb, tmpbytes...)
@@ -87,7 +163,7 @@ func SerializeGramIndexToFile(tree *gramIndex.IndexTree, filename string) {
 	fb = append(fb, invtdTotalbyte...)
 	fb = append(fb, addrTotalbyte...)
 
-	file, err := os.Create(filename)
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 	defer file.Close()
 	if err != nil {
 		fmt.Println("file open fail when mptrie serialize.", err)
@@ -101,56 +177,6 @@ func SerializeGramIndexToFile(tree *gramIndex.IndexTree, filename string) {
 	}
 
 }
-
-//get more than qmin index grams,and write the file
-func getGramIndexData(tree *gramIndex.IndexTree) (map[string]*SerializeObj, map[string]*InvertedListBlock, map[string][]*AddrCenterStatus) {
-	res := make(map[string]*SerializeObj)
-	res_invetedblk := make(map[string]*InvertedListBlock)
-	res_addrCntStatus := make(map[string][]*AddrCenterStatus)
-	var dfs func(node *gramIndex.IndexTreeNode, path []string)
-	dfs = func(node *gramIndex.IndexTreeNode, path []string) {
-		if node.Isleaf() == true {
-			temp := ""
-			for _, s := range path {
-				temp += s
-			}
-			//process addr
-			addrmp := node.AddrOffset()
-			arrlen := uint64(len(addrmp))
-			if arrlen != 0 {
-				res_addrCntStatus[temp] = encodeGramAddrCntStatus(addrmp) //addrlistblock
-			}
-
-			//process inverted
-			inverted := node.InvertedIndex()
-			invtdlen := uint64(len(inverted))
-			if invtdlen != 0 {
-				res_invetedblk[temp] = encodeInvertedBlk(inverted) //inverted list block
-			}
-			//obj
-			freq := node.Frequency()
-			min, max := GetMaxAndMinTime(inverted)
-			addrEntry := NewAddrListEntry(0)
-			invertedEntry := NewInvertedListEntry(min, max, 0)
-			obj := NewSerializeObj(temp,uint32(freq), arrlen, addrEntry, invtdlen, invertedEntry)
-			res[temp] = obj
-			//fmt.Println(temp, node.AddrOffset())
-		}
-		if len(node.Children()) == 0 {
-			return
-		}
-		for _, child := range node.Children() {
-			path = append(path, child.Data())
-			dfs(child, path)
-			path = path[:len(path)-1]
-		}
-	}
-	root := tree.Root()
-	path := make([]string, 0)
-	dfs(root, path)
-	return res, res_invetedblk, res_addrCntStatus
-}
-
 func serializeObj(obj *SerializeObj) []byte {
 	res := make([]byte, 0)
 	size, err := IntToBytes(int(obj.Size()), stdlen)
@@ -194,6 +220,7 @@ func serializeObj(obj *SerializeObj) []byte {
 	if obj.InvertedListlen() == 0 {
 		//
 	} else {
+
 		entrysize, err := IntToBytes(int(obj.InvertedListEntry().Size()), stdlen)
 		res = append(res, entrysize...)
 		if err != nil {

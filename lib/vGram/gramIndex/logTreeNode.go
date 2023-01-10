@@ -15,7 +15,10 @@ limitations under the License.
 */
 package gramIndex
 
-import "fmt"
+import (
+	"fmt"
+	"unsafe"
+)
 
 type LogTreeNode struct {
 	data     string
@@ -60,5 +63,31 @@ func (node *LogTreeNode) PrintTreeNode(level int) {
 	fmt.Print(node.data, " - ")
 	for _, child := range node.children {
 		child.PrintTreeNode(level + 1)
+	}
+}
+
+var TheoreticalMemoUsedLogTree uint64 = 0
+var ExactMemoUsedLogTree uint64 = 0
+
+const NODEDATABYTELOGTREE = 1
+const CHILDMAPBYTELOGTREE = 1
+
+func (node *LogTreeNode) GetMemorySizeOfLogTreeTheoretical(level int) {
+	TheoreticalMemoUsedLogTree += NODEDATABYTELOGTREE
+	if len(node.children) > 0 {
+		TheoreticalMemoUsedLogTree += uint64(len(node.children) * CHILDMAPBYTELOGTREE)
+	}
+	for _, child := range node.children {
+		child.GetMemorySizeOfLogTreeTheoretical(level + 1)
+	}
+}
+
+func (node *LogTreeNode) GetMemorySizeOfLogTreeExact(level int) {
+	ExactMemoUsedLogTree += uint64(unsafe.Sizeof(node))
+	if len(node.children) > 0 {
+		ExactMemoUsedLogTree += uint64(len(node.children) * CHILDMAPBYTELOGTREE)
+	}
+	for _, child := range node.children {
+		child.GetMemorySizeOfLogTreeExact(level + 1)
 	}
 }

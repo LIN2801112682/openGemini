@@ -19,6 +19,7 @@ package tsi
 import (
 	"fmt"
 	"github.com/openGemini/openGemini/lib/clvIndex"
+	"github.com/openGemini/openGemini/lib/mpTrie"
 	"github.com/openGemini/openGemini/lib/tracing"
 	"github.com/openGemini/openGemini/lib/utils"
 	"github.com/openGemini/openGemini/open_src/github.com/savsgio/gotils/strings"
@@ -31,13 +32,15 @@ import (
 type TextIndex struct {
 	FieldKeys map[string][]string
 	ClvIndex  *clvIndex.CLVIndex
+	Path      string
 }
 
 func NewTextIndex(opts *Options) (*TextIndex, error) {
 	textIndex := &TextIndex{
 		FieldKeys: make(map[string][]string),
-		ClvIndex:  clvIndex.NewCLVIndex(clvIndex.VGRAM),
+		ClvIndex:  clvIndex.NewCLVIndex(clvIndex.VTOKEN, opts.path+"/text"),
 	}
+	textIndex.Path = opts.path + "/text"
 	str := make([]string, 1)
 	str[0] = "logs"
 	textIndex.FieldKeys["clvTable"] = str
@@ -45,14 +48,32 @@ func NewTextIndex(opts *Options) (*TextIndex, error) {
 	if err := textIndex.Open(); err != nil {
 		return nil, err
 	}
-
 	return textIndex, nil
 }
 
 // Need to read the disk file
 func (idx *TextIndex) Open() error {
 	fmt.Println("TextIndex Open")
-	// TODO
+	measurementAndFieldKey := clvIndex.NewMeasurementAndFieldKey("clvTable", "logs")
+	if _, ok := idx.ClvIndex.IndexTreeMap()[measurementAndFieldKey]; !ok {
+		idx.ClvIndex.IndexTreeMap()[measurementAndFieldKey] = clvIndex.NewDicAndIndex()
+	}
+	if idx.ClvIndex.IndexType() == clvIndex.VGRAM {
+		dicPath := idx.Path + "/clvTable/" + "logs/" + "VGRAM/" + "dic/" + "dic0.txt"
+		if utils.FileExist(dicPath) {
+			dic := mpTrie.UnserializeGramDicFromFile(dicPath, clvIndex.QMINGRAM, clvIndex.QMAXGRAM)
+			idx.ClvIndex.IndexTreeMap()[clvIndex.NewMeasurementAndFieldKey("clvTable", "logs")].Dic().VgramDicRoot = dic
+		}
+	} else if idx.ClvIndex.IndexType() == clvIndex.VTOKEN {
+		dicPath := idx.Path + "/clvTable/" + "logs/" + "VTOKEN/" + "dic/" + "dic0.txt"
+		if utils.FileExist(dicPath) {
+			dic := mpTrie.UnserializeTokenDicFromFile(dicPath, clvIndex.QMINTOKEN, clvIndex.QMAXTOKEN)
+			idx.ClvIndex.IndexTreeMap()[clvIndex.NewMeasurementAndFieldKey("clvTable", "logs")].Dic().VtokenDicRoot = dic
+		}
+	}
+	if len(idx.ClvIndex.Search().FileNames()) == 0 {
+		idx.ClvIndex.Search().SearchIndexTreeFromDisk(idx.ClvIndex.IndexType(), "clvTable", "logs", idx.Path)
+	}
 	return nil
 }
 
@@ -78,36 +99,8 @@ func (idx *TextIndex) CreateIndexIfNotExists(primaryIndex PrimaryIndex, row *inf
 	}
 	return 0, nil
 }
-func And(s1, s2 []utils.SeriesId) []utils.SeriesId {
-	smap := make(map[utils.SeriesId]struct{})
-	for i := 0; i < len(s1); i++ {
-		smap[s1[i]] = struct{}{}
-	}
-	result := make([]utils.SeriesId, 0)
-	for i := 0; i < len(s2); i++ {
-		_, ok := smap[s2[i]]
-		if ok {
-			result = append(result, s2[i])
-		}
-	}
-	return result
-}
 
-func Or(s1, s2 []utils.SeriesId) []utils.SeriesId {
-	smap := make(map[utils.SeriesId]struct{})
-	for i := 0; i < len(s1); i++ {
-		smap[s1[i]] = struct{}{}
-	}
-	for i := 0; i < len(s2); i++ {
-		_, ok := smap[s2[i]]
-		if !ok {
-			s1 = append(s1, s2[i])
-		}
-	}
-	return s1
-}
-
-func (idx *TextIndex) searchTSIDsByBinaryExpr(n *influxql.BinaryExpr, measurementName string) ([]utils.SeriesId, error) {
+func (idx *TextIndex) searchTSIDsByBinaryExpr(n *influxql.BinaryExpr, measurementName string) (map[utils.SeriesId]struct{}, error) {
 	key, _ := n.LHS.(*influxql.VarRef)
 	value, _ := n.RHS.(*influxql.StringLiteral)
 	if n.Op == influxql.MATCH {
@@ -117,11 +110,11 @@ func (idx *TextIndex) searchTSIDsByBinaryExpr(n *influxql.BinaryExpr, measuremen
 	} else if n.Op == influxql.REGEX {
 		return idx.ClvIndex.CLVSearch(measurementName, key.Val, clvIndex.REGEXSEARCH, value.Val), nil
 	} else {
-		return make([]utils.SeriesId, 0), nil
+		return make(map[utils.SeriesId]struct{}), nil
 	}
 }
 
-func (idx *TextIndex) searchTSIDsInternal(expr influxql.Expr, measurementName string) ([]utils.SeriesId, error) {
+func (idx *TextIndex) searchTSIDsInternal(expr influxql.Expr, measurementName string) (map[utils.SeriesId]struct{}, error) {
 	if expr == nil {
 		return nil, nil
 	}
@@ -132,11 +125,11 @@ func (idx *TextIndex) searchTSIDsInternal(expr influxql.Expr, measurementName st
 			if expr.Op == influxql.AND {
 				l, _ := idx.searchTSIDsInternal(expr.LHS, measurementName)
 				r, _ := idx.searchTSIDsInternal(expr.RHS, measurementName)
-				return And(l, r), nil
+				return utils.And(l, r), nil
 			} else {
 				l, _ := idx.searchTSIDsInternal(expr.LHS, measurementName)
 				r, _ := idx.searchTSIDsInternal(expr.RHS, measurementName)
-				return Or(l, r), nil
+				return utils.Or(l, r), nil
 			}
 		default:
 			return idx.searchTSIDsByBinaryExpr(expr, measurementName)
@@ -154,11 +147,10 @@ func (idx *TextIndex) Search(primaryIndex PrimaryIndex, span *tracing.Span, name
 	//start := time.Now().UnixMicro()
 	measurementName := opt.Name
 	clvSids, _ := idx.searchTSIDsInternal(opt.Condition, measurementName)
-
 	mapClvSids := make(map[uint64][]int64)
-	for i := 0; i < len(clvSids); i++ { //todo
-		key := clvSids[i].Id
-		val := clvSids[i].Time
+	for keys, _ := range clvSids {
+		key := keys.Id
+		val := keys.Time
 		if _, ok := mapClvSids[key]; !ok {
 			timeArr := []int64{}
 			timeArr = append(timeArr, val)
@@ -169,16 +161,12 @@ func (idx *TextIndex) Search(primaryIndex PrimaryIndex, span *tracing.Span, name
 	}
 
 	mergeSetIndex := primaryIndex.(*MergeSetIndex)
-	var indexKeyBuf []byte // reused todo
-	var err error
+	var indexKeyBuf []byte
 	groupSeries := make(GroupSeries, 1)
 	for i := 0; i < 1; i++ {
 		tagSetInfo := NewTagSetInfoRe()
 		for id, timeArr := range mapClvSids {
-			indexKeyBuf, err = mergeSetIndex.searchSeriesKey(indexKeyBuf, id)
-			if err != nil {
-				panic(err)
-			}
+			indexKeyBuf, _ = mergeSetIndex.searchSeriesKey(indexKeyBuf, id)
 			var tagsBuf influx.PointTags
 			influx.IndexKeyToTags(indexKeyBuf, true, &tagsBuf)
 			seriesKey := getSeriesKeyBuf()
@@ -203,7 +191,7 @@ func (idx *TextIndex) Search(primaryIndex PrimaryIndex, span *tracing.Span, name
 	//fmt.Println(float64(end-start) / 1000)
 	fmt.Println("===============================")
 	fmt.Println("===============================")
-	return groupSeries, nil //groupSeries
+	return groupSeries, nil
 }
 
 func (idx *TextIndex) Delete(primaryIndex PrimaryIndex, name []byte, condition influxql.Expr, tr TimeRange) error {

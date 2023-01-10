@@ -19,6 +19,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 )
 
@@ -39,5 +40,24 @@ func GetLinesFromFile(filename string) []string {
 		res = append(res, str)
 	}
 	return res
+}
 
+func GetAllFile(pathname string, s []string) ([]string, error) {
+	rd, err := ioutil.ReadDir(pathname)
+	if err != nil {
+		//fmt.Println("read dir fail:", err)
+		return s, err
+	}
+	for _, fi := range rd {
+		if !fi.IsDir() {
+			fullName := pathname + fi.Name()
+			s = append(s, fullName)
+		}
+	}
+	return s, nil
+}
+
+func FileExist(path string) bool {
+	_, err := os.Lstat(path)
+	return !os.IsNotExist(err)
 }

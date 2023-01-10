@@ -81,7 +81,7 @@ func (root *IndexTreeNode) SetInvertedIndex(invertedIndex utils.Inverted_index) 
 func NewIndexTreeNode(data string) *IndexTreeNode {
 	return &IndexTreeNode{
 		data:          data,
-		frequency:     1,
+		frequency:     0,
 		isleaf:        false,
 		children:      make(map[uint8]*IndexTreeNode),
 		invertedIndex: make(map[utils.SeriesId][]uint16),
@@ -139,9 +139,12 @@ const OFFSETBYTE = 2
 
 var InvertedSize uint64 = 0
 var AddrSize uint64 = 0
+var Nodes uint64 = 0
+var PositionList uint64 = 0
 
 func (node *IndexTreeNode) GetMemorySizeOfIndexTreeTheoretical(level int) { //unsafe.sizeof
 	TheoreticalMemoUsed += (NODEISLEAFBYTE + NODEDATABYTE + FREQUENCY)
+	Nodes++
 	if len(node.children) > 0 {
 		TheoreticalMemoUsed += uint64(len(node.children) * CHILDMAPBYTE)
 	}
@@ -149,6 +152,7 @@ func (node *IndexTreeNode) GetMemorySizeOfIndexTreeTheoretical(level int) { //un
 	if len(invertedIndex) > 0 {
 		InvertedSize += uint64(len(invertedIndex))
 		for _, v := range invertedIndex {
+			PositionList += uint64(len(v))
 			TheoreticalMemoUsed += uint64(SIDBYTE + len(v)*POSBYTE)
 		}
 	}

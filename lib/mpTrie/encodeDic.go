@@ -1,9 +1,9 @@
 package mpTrie
 
 import (
-	"fmt"
 	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
 	"github.com/openGemini/openGemini/lib/vToken/tokenDic/tokenClvc"
+	"fmt"
 	"os"
 	"strings"
 )

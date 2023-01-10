@@ -1,8 +1,8 @@
 package mpTrie
 
 import (
-	"fmt"
 	"github.com/openGemini/openGemini/lib/utils"
+	"fmt"
 	"hash/crc32"
 	"sort"
 )
@@ -52,6 +52,7 @@ func (i *InvertedListBlock) Less(m, n int) bool {
 	}
 	return items[m].Timestamp() < items[n].Timestamp()
 }
+
 
 func InitInvertedListBlock(mpblk map[utils.SeriesId][]uint16, blksize uint64) *InvertedListBlock {
 	return &InvertedListBlock{mpblk: mpblk, blksize: blksize}

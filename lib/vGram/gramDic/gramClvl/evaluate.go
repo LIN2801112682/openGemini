@@ -40,7 +40,7 @@ func GeneratorTw(sampleStringOfW map[utils.SeriesId]string, qmin int, trie *gram
 		if len(gram) > qmin { //Generate all gramIndex entries between qmin+1 - len(gram)
 			gramIndex.GramSubs = make([]gramIndex.SubGramOffset, 0)
 			gramIndex.GenerateQmin2QmaxGrams(gram, qmin)
-			treeW.InsertOnlyGramIntoIndexTree(gramIndex.GramSubs, addr)
+			treeW.InsertOnlyGramIntoIndexTree(gramIndex.GramSubs, addr, 0)
 		}
 	}
 	treeW.SetCout(len(sampleStringOfW))

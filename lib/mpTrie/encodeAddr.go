@@ -1,58 +1,61 @@
 package mpTrie
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"github.com/openGemini/openGemini/lib/vGram/gramIndex"
 	"github.com/openGemini/openGemini/lib/vToken/tokenIndex"
-	"reflect"
-	"sort"
 )
 
-//the center status of addrlistblock turn to file layout format
+
 func encodeTokenAddrCntStatus(addoff map[*tokenIndex.IndexTreeNode]uint16) []*AddrCenterStatus {
 	res := make([]*AddrCenterStatus, 0)
 	for node, off := range addoff {
 		cur := *node
 		inverted := cur.InvertedIndex()
-		blk := encodeInvertedBlk(inverted)
-		tmp := NewAddrCenterStatus(blk, off)
+		mpblk := encodeInvertedBlk(inverted)
+		tmp := NewAddrCenterStatus(mpblk, off)
 		res = append(res, tmp)
 	}
 	return res
 }
+
 func encodeGramAddrCntStatus(addoff map[*gramIndex.IndexTreeNode]uint16) []*AddrCenterStatus {
 	res := make([]*AddrCenterStatus, 0)
 	for node, off := range addoff {
 		cur := *node
 		inverted := cur.InvertedIndex()
-		blk := encodeInvertedBlk(inverted)
-		tmp := NewAddrCenterStatus(blk, off)
+		mpblk := encodeInvertedBlk(inverted)
+		tmp := NewAddrCenterStatus(mpblk, off)
 		res = append(res, tmp)
 	}
 	return res
 }
 
-//update addrlistblock offset
+//mapenc version update addrlistblock offset
 func addrCenterStatusToBLK(startoff uint64, idxData []string, res_addrctr map[string][]*AddrCenterStatus, invtdblkHashToOff map[uint32]uint64) (map[string]*AddrListBlock, map[*AddrListBlock]uint64) {
 	mp_addrblk := make(map[string]*AddrListBlock)
-	addrblkToOff := make(map[*AddrListBlock]uint64, 0) //&lt;addrlistblock,offset&gt; of the addrlistblock
+	addrblkToOff := make(map[*AddrListBlock]uint64, 0) //<addrlistblock,offset> of the addrlistblock
 	for _, data := range idxData {
 		addrblk := new(AddrListBlock)
 		ctrstatusArry := res_addrctr[data]
-		items := make([]*AddrItem, 0)
-		var blksize uint64 = 0
+		items := make(map[uint64]uint16)
 		for _, ctrstatus := range ctrstatusArry {
 			blk := ctrstatus.Blk()
 			logoff := ctrstatus.Offset()
 			//diff addr
-			hash := blk.HashInvertedBlk()
+			hash := HashInvertedBlk(blk)
 			invtdoffset := invtdblkHashToOff[hash]
-
-			item := NewAddrItem(invtdoffset, logoff)
-			items = append(items, item)
-			blksize += item.Size() + DEFAULT_SIZE
+			items[invtdoffset]=logoff
 		}
-		addrblk.SetBlk(items)
+		addrbytes,err := EncodeAddrByGob(items)
+		blksize := uint64(len(addrbytes))
+		if err!=nil{
+			fmt.Println(err)
+			return nil,nil
+		}
+		addrblk.SetMpblk(items)
 		addrblk.SetBlksize(blksize)
 		mp_addrblk[data] = addrblk
 		addrblkToOff[addrblk] = startoff
@@ -61,15 +64,14 @@ func addrCenterStatusToBLK(startoff uint64, idxData []string, res_addrctr map[st
 	return mp_addrblk, addrblkToOff
 }
 
-func checkblk(blk *InvertedListBlock, invtdblkToOff map[*InvertedListBlock]uint64) (uint64, error) {
-	for tmp, off := range invtdblkToOff {
-		sort.Sort(tmp)
-		sort.Sort(blk)
-		if reflect.DeepEqual(tmp, blk) {
-			return off, nil
-		}
+func EncodeAddrByGob(mp map[uint64]uint16) ([]byte,error){
+	buf := new(bytes.Buffer)
+	encoder := gob.NewEncoder(buf)
+	err := encoder.Encode(mp)
+	if err != nil {
+		return nil,fmt.Errorf("encodeaddr failed.")
 	}
-	return 3, fmt.Errorf("AddrcenterStatus not find Inverted offset.")
+	return buf.Bytes(),nil
 }
 
 //serialize addrlistblock
@@ -81,33 +83,12 @@ func serializeAddrListBlock(addrblk *AddrListBlock) []byte {
 		fmt.Println(err)
 		return nil
 	}
-	blk := addrblk.Blk()
-	for _, item := range blk {
-		b := serializeAddrItem(item)
-		res = append(res, b...)
+	blk := addrblk.Mpblk()
+	byGob, err := EncodeAddrByGob(blk)
+	if err != nil {
+		return nil
 	}
+	res = append(res,byGob...)
 	return res
 }
 
-func serializeAddrItem(item *AddrItem) []byte {
-	res := make([]byte, 0)
-	itemsize, err := IntToBytes(int(item.Size()), stdlen)
-	res = append(res, itemsize...)
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
-	itemdata, err := IntToBytes(int(item.Addrdata()), stdlen)
-	res = append(res, itemdata...)
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
-	itemoff, err := IntToBytes(int(item.IndexEntryOffset()), 2)
-	res = append(res, itemoff...)
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
-	return res
-}
