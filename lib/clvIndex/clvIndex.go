@@ -27,17 +27,17 @@ import (
 )
 
 type CLVIndex struct {
-	indexTreeMap map[MeasurementAndFieldKey]*DicAndIndex
+	indexTreeMap map[MeasurementAndFieldKey]*CLVIndexNode
 	indexType    CLVIndexType
 	search       *CLVSearch
 	path         string
 }
 
-func (clvIndex *CLVIndex) IndexTreeMap() map[MeasurementAndFieldKey]*DicAndIndex {
+func (clvIndex *CLVIndex) IndexTreeMap() map[MeasurementAndFieldKey]*CLVIndexNode {
 	return clvIndex.indexTreeMap
 }
 
-func (clvIndex *CLVIndex) SetIndexTreeMap(indexTreeMap map[MeasurementAndFieldKey]*DicAndIndex) {
+func (clvIndex *CLVIndex) SetIndexTreeMap(indexTreeMap map[MeasurementAndFieldKey]*CLVIndexNode) {
 	clvIndex.indexTreeMap = indexTreeMap
 }
 
@@ -67,7 +67,7 @@ func (clvIndex *CLVIndex) SetPath(path string) {
 
 func NewCLVIndex(indexType CLVIndexType, path string) *CLVIndex {
 	return &CLVIndex{
-		indexTreeMap: make(map[MeasurementAndFieldKey]*DicAndIndex),
+		indexTreeMap: make(map[MeasurementAndFieldKey]*CLVIndexNode),
 		indexType:    indexType,
 		search:       NewCLVSearch(indexType),
 		path:         path,
@@ -110,43 +110,12 @@ func NewMeasurementAndFieldKey(measurementName string, fieldKey string) Measurem
 	}
 }
 
-type DicAndIndex struct {
-	dic   *CLVDictionary
-	index *CLVIndexNode
-}
-
-func (d *DicAndIndex) Dic() *CLVDictionary {
-	return d.dic
-}
-
-func (d *DicAndIndex) SetDic(dic *CLVDictionary) {
-	d.dic = dic
-}
-
-func (d *DicAndIndex) Index() *CLVIndexNode {
-	return d.index
-}
-
-func (d *DicAndIndex) SetIndex(index *CLVIndexNode) {
-	d.index = index
-}
-
-func NewDicAndIndex() *DicAndIndex {
-	return &DicAndIndex{
-		dic:   NewCLVDictionary(),
-		index: NewCLVIndexNode(),
-	}
-}
-
 func (clvIndex *CLVIndex) CreateCLVIndex(log string, tsid uint64, timeStamp int64, measurement string, fieldName string) {
 	measurementAndFieldKey := NewMeasurementAndFieldKey(measurement, fieldName)
-	if _, ok := clvIndex.indexTreeMap[measurementAndFieldKey]; !ok {
-		clvIndex.indexTreeMap[measurementAndFieldKey] = NewDicAndIndex() //Start with the configuration dictionary
-	}
-	if DicIndex != MAXDICBUFFER { //todo
+	if DicIndex != MAXDICBUFFER {
 		clvIndex.indexTreeMap[measurementAndFieldKey].dic.CreateDictionaryIfNotExists(log, tsid, timeStamp, clvIndex.indexType, clvIndex.path)
 	}
-	clvIndex.indexTreeMap[measurementAndFieldKey].index.CreateCLVIndexIfNotExists(log, tsid, timeStamp, clvIndex.indexType, clvIndex.indexTreeMap[measurementAndFieldKey].dic.DicType, *clvIndex.indexTreeMap[measurementAndFieldKey].dic, clvIndex.path)
+	clvIndex.indexTreeMap[measurementAndFieldKey].CreateCLVIndexIfNotExists(log, tsid, timeStamp)
 }
 
 func (clvIndex *CLVIndex) CLVSearch(measurementName string, fieldKey string, queryType QuerySearch, queryStr string) map[utils.SeriesId]struct{} {

@@ -55,21 +55,22 @@ func NewTextIndex(opts *Options) (*TextIndex, error) {
 func (idx *TextIndex) Open() error {
 	fmt.Println("TextIndex Open")
 	measurementAndFieldKey := clvIndex.NewMeasurementAndFieldKey("clvTable", "logs")
+	dic := clvIndex.NewCLVDictionary()
 	if _, ok := idx.ClvIndex.IndexTreeMap()[measurementAndFieldKey]; !ok {
-		idx.ClvIndex.IndexTreeMap()[measurementAndFieldKey] = clvIndex.NewDicAndIndex()
-	}
-	if idx.ClvIndex.IndexType() == clvIndex.VGRAM {
-		dicPath := idx.Path + "/clvTable/" + "logs/" + "VGRAM/" + "dic/" + "dic0.txt"
-		if utils.FileExist(dicPath) {
-			dic := mpTrie.UnserializeGramDicFromFile(dicPath, clvIndex.QMINGRAM, clvIndex.QMAXGRAM)
-			idx.ClvIndex.IndexTreeMap()[clvIndex.NewMeasurementAndFieldKey("clvTable", "logs")].Dic().VgramDicRoot = dic
+		if idx.ClvIndex.IndexType() == clvIndex.VGRAM {
+			dicPath := idx.Path + "/clvTable/" + "logs/" + "VGRAM/" + "dic/" + "dic0.txt"
+			if utils.FileExist(dicPath) {
+				gramDic := mpTrie.UnserializeGramDicFromFile(dicPath, clvIndex.QMINGRAM, clvIndex.QMAXGRAM)
+				dic.VgramDicRoot = gramDic
+			}
+		} else if idx.ClvIndex.IndexType() == clvIndex.VTOKEN {
+			dicPath := idx.Path + "/clvTable/" + "logs/" + "VTOKEN/" + "dic/" + "dic0.txt"
+			if utils.FileExist(dicPath) {
+				tokenDic := mpTrie.UnserializeTokenDicFromFile(dicPath, clvIndex.QMINTOKEN, clvIndex.QMAXTOKEN)
+				dic.VtokenDicRoot = tokenDic
+			}
 		}
-	} else if idx.ClvIndex.IndexType() == clvIndex.VTOKEN {
-		dicPath := idx.Path + "/clvTable/" + "logs/" + "VTOKEN/" + "dic/" + "dic0.txt"
-		if utils.FileExist(dicPath) {
-			dic := mpTrie.UnserializeTokenDicFromFile(dicPath, clvIndex.QMINTOKEN, clvIndex.QMAXTOKEN)
-			idx.ClvIndex.IndexTreeMap()[clvIndex.NewMeasurementAndFieldKey("clvTable", "logs")].Dic().VtokenDicRoot = dic
-		}
+		idx.ClvIndex.IndexTreeMap()[measurementAndFieldKey] = clvIndex.NewCLVIndexNode(idx.ClvIndex.IndexType(), dic, measurementAndFieldKey, idx.Path)
 	}
 	if len(idx.ClvIndex.Search().FileNames()) == 0 {
 		idx.ClvIndex.Search().SearchIndexTreeFromDisk(idx.ClvIndex.IndexType(), "clvTable", "logs", idx.Path)

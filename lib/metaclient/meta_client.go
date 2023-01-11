@@ -74,8 +74,8 @@ const (
 	ShardGroupDeletedExpiration = -2 * 7 * 24 * time.Hour
 	IndexGroupDeletedExpiration = -2 * 7 * 24 * time.Hour
 
-	RPCReqTimeout       = 10 * time.Second
-	HttpReqTimeout      = 10 * time.Second
+	RPCReqTimeout       = 100 * time.Second
+	HttpReqTimeout      = 100 * time.Second
 	HttpSnapshotTimeout = 4 * time.Second
 
 	//for lock user
