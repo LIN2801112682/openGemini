@@ -175,6 +175,7 @@ func (clvSearch *CLVSearch) SearchIndexTreeFromDisk(clvType CLVIndexType, measur
 			clvSearch.fileNames, err = utils.GetAllFile(path+"/"+measurement+"/"+fieldKey+"/"+"VTOKEN/"+"index/", s)
 		}
 		if err == nil {
+			//clvSearch.fileNames = clvSearch.fileNames[0:2]
 			clvSearch.searchTree, clvSearch.filePtr, clvSearch.addrCache, clvSearch.invtdCache = mpTrie.DecodeTokenIndexFromMultiFile(clvSearch.fileNames, 50000000, 50000000)
 			clvSearch.indexRoots = clvSearch.searchTree.Root()
 			clvSearch.tokenMap = clvSearch.indexRoots.GetGramMap(REGEX_Q)

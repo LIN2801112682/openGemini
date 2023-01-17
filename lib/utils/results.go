@@ -49,3 +49,15 @@ func Or(s1, s2 map[SeriesId]struct{}) map[SeriesId]struct{} {
 	}
 	return result
 }
+
+func OrMaps(maps ...map[SeriesId]struct{}) map[SeriesId]struct{} {
+	result := make(map[SeriesId]struct{})
+	for i := 0; i < len(maps); i++ {
+		if len(maps[i]) > 0 {
+			for key, _ := range maps[i] {
+				result[key] = struct{}{}
+			}
+		}
+	}
+	return result
+}

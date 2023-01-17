@@ -36,7 +36,7 @@ const (
 	close
 )
 
-const SHARDBUFFER = 50000000 //100000000
+const SHARDBUFFER = 500000 //100000000
 
 type CLVIndexNode struct {
 	VgramIndexRoot  *gramIndex.IndexTree
@@ -251,7 +251,7 @@ func (clvIndexNode *CLVIndexNode) CreateCLVVTokenIndexIfNotExists(dicType CLVDic
 		PerTime += uint64(end2-start2) / 1000
 		fmt.Println("persistence cost time(ms): ", float64((end2-start2)/1000))
 		clvIndexNode.VtokenIndexRoot = tokenIndex.NewIndexTree(QMINGRAM, QMAXGRAM)
-		if PersitenceId == 19 {
+		if PersitenceId == 0 {
 			fmt.Println("index cost all time =======", MemoTime)
 			fmt.Println("persistence cost all time =======", PerTime)
 		}

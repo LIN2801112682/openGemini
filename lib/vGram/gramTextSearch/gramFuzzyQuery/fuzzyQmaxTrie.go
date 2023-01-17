@@ -283,7 +283,7 @@ func FuzzyQueryGramQmaxTrie(rootFuzzyTrie *gramIndex.LogTreeNode, searchStr stri
 				resMapFuzzy = FuzzyReadInver(resMapFuzzy, vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache)
 				return resMapFuzzy
 			} else {
-				arrayNew := gramMatchQuery.MatchSearch2(vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache)
+				arrayNew := make(map[utils.SeriesId]struct{})//gramMatchQuery.MatchSearch2(vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache, nil) todo
 				return arrayNew
 			}
 		}
@@ -294,7 +294,7 @@ func FuzzyQueryGramQmaxTrie(rootFuzzyTrie *gramIndex.LogTreeNode, searchStr stri
 		if len(vgMap) == 1 {
 			resMapFuzzy = FuzzyReadInver(resMapFuzzy, vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache)
 		} else {
-			arrayNew := gramMatchQuery.MatchSearch2(vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache)
+			arrayNew := make(map[utils.SeriesId]struct{})//gramMatchQuery.MatchSearch2(vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache, nil) todo
 			resMapFuzzy = UnionMapGramFuzzy(resMapFuzzy, arrayNew)
 		}
 	}

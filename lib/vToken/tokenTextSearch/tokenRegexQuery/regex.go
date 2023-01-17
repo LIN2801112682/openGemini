@@ -46,10 +46,10 @@ func GetSuffixMap(re string, length int) map[string]struct{} {
 	return suffixMap
 }
 
-
 func RegexSearch(re string, indexRoot *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, tokenMap map[string][]*mpTrie.SearchTreeNode) map[utils.SeriesId]struct{} {
 	fmt.Println("正则表达式:", re)
 	var resArr = make(map[utils.SeriesId]struct{}, 0)
+	var mapTemp = make([]map[utils.SeriesId]struct{}, 0)
 	q := 3
 	start := time.Now().UnixMicro()
 	//filter_start_time := time.Now().UnixMicro()
@@ -66,17 +66,18 @@ func RegexSearch(re string, indexRoot *mpTrie.SearchTreeNode, filePtr map[int]*o
 	//verification_time := int64(0)
 	for fileId, _ := range filePtr {
 		if !isQ {
-			resArr = utils.Or(resArr, MatchWithoutGramMap(re, indexRoot, fileId, filePtr, addrCache, invertedCache))
+			mapTemp = append(mapTemp, MatchWithoutGramMap(re, indexRoot, fileId, filePtr, addrCache, invertedCache))
 		} else {
 			//verification_start_time := time.Now().UnixMicro()
-			resArr = utils.Or(resArr, MatchWithGramMap(tokenMap, suffixMap, re, indexRoot, fileId, filePtr, addrCache, invertedCache))
+			mapTemp = append(mapTemp, MatchWithGramMap(tokenMap, suffixMap, re, indexRoot, fileId, filePtr, addrCache, invertedCache))
 			//verification_end_time := time.Now().UnixMicro()
 			//verification_time += verification_end_time - verification_start_time
 		}
 	}
 	end := time.Now().UnixMicro()
+	resArr = utils.OrMaps(mapTemp...)
 	//fmt.Println("验证时间:", verification_time)
-	fmt.Println("花费时间：", end-start)
+	fmt.Println("花费时间(ms)：", float64(end-start)/1000.0)
 	fmt.Println("结果条数：", len(resArr))
 	return resArr
 }

@@ -29,7 +29,7 @@ const (
 	// DefaultEnqueuedWriteTimeout is the maximum time a write request can wait to be processed.
 	DefaultEnqueuedWriteTimeout = 30 * time.Second
 	// DefaultMaxRowNum is the maximum row number of a query result.
-	DefaultMaxRowNum = 1000000
+	DefaultMaxRowNum = 100000000
 
 	DefaultBlockSize = 64 * 1024
 )

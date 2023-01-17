@@ -237,10 +237,12 @@ func FuzzySearchComparedWithES(searchSingleToken string, indexRoot *mpTrie.Searc
 func FuzzyTokenQueryTries(searchStr string, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, distance, prefixlen int) map[utils.SeriesId]struct{} {
 	start := time.Now().UnixMicro()
 	var resArr = make(map[utils.SeriesId]struct{})
+	var mapTemp = make([]map[utils.SeriesId]struct{}, 0)
 	for fileId, _ := range filePtr {
-		resArr = utils.Or(FuzzySearchComparedWithES(searchStr, indexRoots, fileId, filePtr, addrCache, invertedCache, distance, prefixlen), resArr)
+		mapTemp = append(mapTemp, FuzzySearchComparedWithES(searchStr, indexRoots, fileId, filePtr, addrCache, invertedCache, distance, prefixlen))
 	}
 	end := time.Now().UnixMicro()
+	resArr = utils.OrMaps(mapTemp...)
 	fmt.Println(float64(end-start) / 1000)
 	return resArr
 }

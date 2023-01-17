@@ -36,12 +36,13 @@ func MapToSlices(resArr utils.Inverted_index) []utils.SeriesId {
 	return res
 }
 
-func InvertdToMap(resArr utils.Inverted_index) map[utils.SeriesId]struct{} {
-	res := make(map[utils.SeriesId]struct{})
+func InvertdToMap(resArr utils.Inverted_index, resMap map[utils.SeriesId]struct{}) {
 	for key, _ := range resArr {
-		res[key] = struct{}{}
+		//res[key] = struct{}{}
+		if _, ok := resMap[key]; !ok {
+			resMap[key] = struct{}{}
+		}
 	}
-	return res
 }
 
 func MapKeyToSlices(arrMap map[utils.SeriesId]struct{}) []utils.SeriesId {

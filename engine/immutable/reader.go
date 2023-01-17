@@ -1196,6 +1196,7 @@ func FilterByFilterTime(rec *record.Record, filterTime []int64, startIndex, endI
 		if filterTime[i] < startTime || filterTime[i] > endTime {
 			continue
 		}
+		//fmt.Println("timeStamp :", filterTime[i])
 		index := record.GetTimeRangeStartIndex(times, startPos, filterTime[i])
 		startPos = index
 		sliceRec := record.Record{}
