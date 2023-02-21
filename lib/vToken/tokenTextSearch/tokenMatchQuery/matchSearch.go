@@ -36,7 +36,8 @@ func MatchSearch(searchStr string, root *tokenClvc.TrieTreeNode, indexRoots *mpT
 		MatchSearch2(vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache, resArr)
 	}
 	end := time.Now().UnixMicro()
-	fmt.Println("match cost all time:(ms)", float64(end-start)/1000)
+	fmt.Println("精确查询时间:(ms)", float64(end-start)/1000)
+	fmt.Println("精确结果条数:", len(resArr))
 	return resArr
 }
 

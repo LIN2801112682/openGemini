@@ -53,15 +53,48 @@ func NewQueryOption(measurement string, fieldKey string, search QuerySearch, que
 }
 
 type CLVSearch struct {
-	clvType    CLVIndexType
-	filePtr    map[int]*os.File
-	fileNames  []string
-	searchTree *mpTrie.SearchTree
-	indexRoots *mpTrie.SearchTreeNode
-	addrCache  *mpTrie.AddrCache
-	invtdCache *mpTrie.InvertedCache
-	logTree    *gramIndex.LogTree
-	tokenMap   map[string][]*mpTrie.SearchTreeNode
+	clvType             CLVIndexType
+	filePtr             map[int]*os.File
+	fileNames           []string
+	searchTree          *mpTrie.SearchTree
+	indexRoots          *mpTrie.SearchTreeNode
+	addrCache           *mpTrie.AddrCache
+	invtdCache          *mpTrie.InvertedCache
+	logTree             *gramIndex.LogTree
+	tokenMap            map[string][]*mpTrie.SearchTreeNode
+	shortFuzzyIndex     map[int]map[string]struct{}
+	longFuzzyIndex      map[string]map[int]map[utils.FuzzyPrefixGram]struct{}
+	gramShortFuzzyIndex map[int]map[string]struct{}
+	gramLongFuzzyIndex  map[string]map[int]map[utils.FuzzyPrefixGram]struct{}
+}
+
+func (clvSearch *CLVSearch) GramShortFuzzyIndex() map[int]map[string]struct{} {
+	return clvSearch.gramShortFuzzyIndex
+}
+
+func (clvSearch *CLVSearch) GramSetShortFuzzyIndex(gramShortFuzzyIndex map[int]map[string]struct{}) {
+	clvSearch.gramShortFuzzyIndex = gramShortFuzzyIndex
+}
+func (clvSearch *CLVSearch) GramLongFuzzyIndex() map[string]map[int]map[utils.FuzzyPrefixGram]struct{} {
+	return clvSearch.gramLongFuzzyIndex
+}
+func (clvSearch *CLVSearch) GramSetLongFuzzyIndex(gramLongFuzzyIndex map[string]map[int]map[utils.FuzzyPrefixGram]struct{}) {
+	clvSearch.gramLongFuzzyIndex = gramLongFuzzyIndex
+}
+
+func (clvSearch *CLVSearch) ShortFuzzyIndex() map[int]map[string]struct{} {
+	return clvSearch.shortFuzzyIndex
+}
+
+func (clvSearch *CLVSearch) SetShortFuzzyIndex(shortFuzzyIndex map[int]map[string]struct{}) {
+	clvSearch.shortFuzzyIndex = shortFuzzyIndex
+}
+func (clvSearch *CLVSearch) LongFuzzyIndex() map[string]map[int]map[utils.FuzzyPrefixGram]struct{} {
+	return clvSearch.longFuzzyIndex
+}
+
+func (clvSearch *CLVSearch) SetLongFuzzyIndex(longFuzzyIndex map[string]map[int]map[utils.FuzzyPrefixGram]struct{}) {
+	clvSearch.longFuzzyIndex = longFuzzyIndex
 }
 
 func (clvSearch *CLVSearch) TokenMap() map[string][]*mpTrie.SearchTreeNode {
@@ -138,15 +171,19 @@ func (clvSearch *CLVSearch) SetLogTree(logTree *gramIndex.LogTree) {
 
 func NewCLVSearch(clvType CLVIndexType) *CLVSearch {
 	return &CLVSearch{
-		clvType:    clvType,
-		filePtr:    make(map[int]*os.File, 0),
-		fileNames:  make([]string, 0),
-		searchTree: nil,
-		indexRoots: nil,
-		addrCache:  nil,
-		invtdCache: nil,
-		logTree:    nil,
-		tokenMap:   make(map[string][]*mpTrie.SearchTreeNode),
+		clvType:             clvType,
+		filePtr:             make(map[int]*os.File, 0),
+		fileNames:           make([]string, 0),
+		searchTree:          nil,
+		indexRoots:          nil,
+		addrCache:           nil,
+		invtdCache:          nil,
+		logTree:             nil,
+		tokenMap:            make(map[string][]*mpTrie.SearchTreeNode),
+		shortFuzzyIndex:     make(map[int]map[string]struct{}),
+		longFuzzyIndex:      make(map[string]map[int]map[utils.FuzzyPrefixGram]struct{}),
+		gramShortFuzzyIndex: make(map[int]map[string]struct{}),
+		gramLongFuzzyIndex:  make(map[string]map[int]map[utils.FuzzyPrefixGram]struct{}),
 	}
 }
 
@@ -165,6 +202,9 @@ func (clvSearch *CLVSearch) SearchIndexTreeFromDisk(clvType CLVIndexType, measur
 			var s []string
 			logFileName, _ := utils.GetAllFile(path+"/"+measurement+"/"+fieldKey+"/"+"VGRAM/"+"logTree/", s)
 			clvSearch.logTree = mpTrie.DecodeLogTreeFromMultiFiles(logFileName, LOGTREEMAX)
+			var pathlist []string
+			LogTreeListPath(clvSearch.logTree.Root(), "", &pathlist)
+			clvSearch.gramShortFuzzyIndex, clvSearch.gramLongFuzzyIndex = clvSearch.indexRoots.FuzzyGramGeneratePrefixIndex(pathlist, PREFIXLEN, ED, QMINGRAM, QMAXGRAM)
 		}
 	} else if clvType == VTOKEN {
 		var err error
@@ -179,39 +219,42 @@ func (clvSearch *CLVSearch) SearchIndexTreeFromDisk(clvType CLVIndexType, measur
 			clvSearch.searchTree, clvSearch.filePtr, clvSearch.addrCache, clvSearch.invtdCache = mpTrie.DecodeTokenIndexFromMultiFile(clvSearch.fileNames, 50000000, 50000000)
 			clvSearch.indexRoots = clvSearch.searchTree.Root()
 			clvSearch.tokenMap = clvSearch.indexRoots.GetGramMap(REGEX_Q)
-			clvSearch.indexRoots.TokenPrefixGrams(PREFIXLEN, ED)
+			clvSearch.shortFuzzyIndex, clvSearch.longFuzzyIndex = clvSearch.indexRoots.GeneratePrefixIndex(PREFIXLEN, ED)
+			//clvSearch.indexRoots.TokenPrefixGrams(PREFIXLEN, ED)
 			clvSearch.logTree = gramIndex.NewLogTree(-1)
 		}
 	}
 }
 
-func CLVSearchIndex(clvType CLVIndexType, dicType CLVDicType, queryOption QueryOption, dictionary *CLVDictionary, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invtdCache *mpTrie.InvertedCache, logTree *gramIndex.LogTree, tokenMap map[string][]*mpTrie.SearchTreeNode) map[utils.SeriesId]struct{} {
-	var res map[utils.SeriesId]struct{}
+func CLVSearchIndex(clvType CLVIndexType, dicType CLVDicType, queryOption QueryOption, dictionary *CLVDictionary, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invtdCache *mpTrie.InvertedCache, logTree *gramIndex.LogTree, tokenMap map[string][]*mpTrie.SearchTreeNode, shortFuzzyIndex map[int]map[string]struct{}, longFuzzyIndex map[string]map[int]map[utils.FuzzyPrefixGram]struct{}, gramShortFuzzyIndex map[int]map[string]struct{}, gramLongFuzzyIndex map[string]map[int]map[utils.FuzzyPrefixGram]struct{}) (map[utils.SeriesId]struct{}, []utils.SeriesId) {
+	var resMap = make(map[utils.SeriesId]struct{})
+	var resSlice = make([]utils.SeriesId, 0)
 	if queryOption.querySearch == MATCHSEARCH {
 		if clvType == VGRAM {
-			res = MatchSearchVGramIndex(dicType, queryOption.queryString, dictionary, indexRoots, filePtr, addrCache, invtdCache)
+			resMap = MatchSearchVGramIndex(dicType, queryOption.queryString, dictionary, indexRoots, filePtr, addrCache, invtdCache)
 		}
 		if clvType == VTOKEN {
-			res = MatchSearchVTokenIndex(dicType, queryOption.queryString, dictionary, indexRoots, filePtr, addrCache, invtdCache)
+			resMap = MatchSearchVTokenIndex(dicType, queryOption.queryString, dictionary, indexRoots, filePtr, addrCache, invtdCache)
 		}
 	}
 	if queryOption.querySearch == FUZZYSEARCH {
 		if clvType == VGRAM {
-			res = FuzzySearchVGramIndex(dicType, queryOption.queryString, dictionary, indexRoots, filePtr, addrCache, invtdCache, logTree)
+			//res = FuzzySearchVGramIndex(dicType, queryOption.queryString, dictionary, indexRoots, filePtr, addrCache, invtdCache, logTree)
+			resMap = FuzzySearchVGramIndexPrefixFilter(dicType, queryOption.queryString, dictionary, indexRoots, filePtr, addrCache, invtdCache, gramShortFuzzyIndex, gramLongFuzzyIndex)
 		}
 		if clvType == VTOKEN {
-			res = FuzzySearchVTokenIndex(dicType, queryOption.queryString, indexRoots, filePtr, addrCache, invtdCache)
+			resSlice = FuzzySearchVTokenIndex(dicType, queryOption.queryString, indexRoots, filePtr, addrCache, invtdCache, shortFuzzyIndex, longFuzzyIndex)
 		}
 	}
 	if queryOption.querySearch == REGEXSEARCH {
 		if clvType == VGRAM {
-			res = RegexSearchVGramIndex(dicType, queryOption.queryString, dictionary, indexRoots, filePtr, addrCache, invtdCache)
+			resSlice = RegexSearchVGramIndex(dicType, queryOption.queryString, dictionary, indexRoots, filePtr, addrCache, invtdCache)
 		}
 		if clvType == VTOKEN {
-			res = RegexSearchVTokenIndex(dicType, queryOption.queryString, indexRoots, filePtr, addrCache, invtdCache, tokenMap)
+			resSlice = RegexSearchVTokenIndex(dicType, queryOption.queryString, indexRoots, filePtr, addrCache, invtdCache, tokenMap)
 		}
 	}
-	return res
+	return resMap, resSlice
 }
 
 func MatchSearchVGramIndex(dicType CLVDicType, queryStr string, dictionary *CLVDictionary, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invtdCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
@@ -236,6 +279,17 @@ func MatchSearchVTokenIndex(dicType CLVDicType, queryStr string, dictionary *CLV
 	return res
 }
 
+func FuzzySearchVGramIndexPrefixFilter(dicType CLVDicType, queryStr string, dictionary *CLVDictionary, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invtdCache *mpTrie.InvertedCache, gramShortFuzzyIndex map[int]map[string]struct{}, gramLongFuzzyIndex map[string]map[int]map[utils.FuzzyPrefixGram]struct{}) map[utils.SeriesId]struct{} {
+	var res = make(map[utils.SeriesId]struct{})
+	if dicType == CLVC {
+		res = gramFuzzyQuery.FuzzyQueryPrefixFilterTries(gramShortFuzzyIndex, gramLongFuzzyIndex, queryStr, dictionary.VgramDicRoot.Root(), indexRoots, QMINGRAM, QMAXGRAM, ED, PREFIXLEN, filePtr, addrCache, invtdCache)
+	}
+	if dicType == CLVL {
+		res = gramFuzzyQuery.FuzzyQueryPrefixFilterTries(gramShortFuzzyIndex, gramLongFuzzyIndex, queryStr, dictionary.VgramDicRoot.Root(), indexRoots, QMINGRAM, QMAXGRAM, ED, PREFIXLEN, filePtr, addrCache, invtdCache)
+	}
+	return res
+}
+
 func FuzzySearchVGramIndex(dicType CLVDicType, queryStr string, dictionary *CLVDictionary, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invtdCache *mpTrie.InvertedCache, logTree *gramIndex.LogTree) map[utils.SeriesId]struct{} {
 	var res = make(map[utils.SeriesId]struct{})
 	if dicType == CLVC {
@@ -247,19 +301,19 @@ func FuzzySearchVGramIndex(dicType CLVDicType, queryStr string, dictionary *CLVD
 	return res
 }
 
-func FuzzySearchVTokenIndex(dicType CLVDicType, queryStr string, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invtdCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
-	var res = make(map[utils.SeriesId]struct{})
+func FuzzySearchVTokenIndex(dicType CLVDicType, queryStr string, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invtdCache *mpTrie.InvertedCache, shortFuzzyIndex map[int]map[string]struct{}, longFuzzyIndex map[string]map[int]map[utils.FuzzyPrefixGram]struct{}) []utils.SeriesId {
+	var res = make([]utils.SeriesId, 0)
 	if dicType == CLVC {
-		res = tokenFuzzyQuery.FuzzyTokenQueryTries(queryStr, indexRoots, filePtr, addrCache, invtdCache, ED, PREFIXLEN)
+		res = tokenFuzzyQuery.FuzzyTokenQueryTries(shortFuzzyIndex, longFuzzyIndex, queryStr, indexRoots, filePtr, addrCache, invtdCache, ED, PREFIXLEN)
 	}
 	if dicType == CLVL {
-		res = tokenFuzzyQuery.FuzzyTokenQueryTries(queryStr, indexRoots, filePtr, addrCache, invtdCache, ED, PREFIXLEN)
+		res = tokenFuzzyQuery.FuzzyTokenQueryTries(shortFuzzyIndex, longFuzzyIndex, queryStr, indexRoots, filePtr, addrCache, invtdCache, ED, PREFIXLEN)
 	}
 	return res
 }
 
-func RegexSearchVGramIndex(dicType CLVDicType, queryStr string, dictionary *CLVDictionary, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invtdCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
-	var res = make(map[utils.SeriesId]struct{})
+func RegexSearchVGramIndex(dicType CLVDicType, queryStr string, dictionary *CLVDictionary, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invtdCache *mpTrie.InvertedCache) []utils.SeriesId {
+	var res = make([]utils.SeriesId, 0)
 	if dicType == CLVC {
 		res = gramRegexQuery.RegexSearch(queryStr, dictionary.VgramDicRoot, QMINGRAM, indexRoots, filePtr, addrCache, invtdCache)
 	}
@@ -269,8 +323,8 @@ func RegexSearchVGramIndex(dicType CLVDicType, queryStr string, dictionary *CLVD
 	return res
 }
 
-func RegexSearchVTokenIndex(dicType CLVDicType, queryStr string, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invtdCache *mpTrie.InvertedCache, tokenMap map[string][]*mpTrie.SearchTreeNode) map[utils.SeriesId]struct{} {
-	var res = make(map[utils.SeriesId]struct{})
+func RegexSearchVTokenIndex(dicType CLVDicType, queryStr string, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invtdCache *mpTrie.InvertedCache, tokenMap map[string][]*mpTrie.SearchTreeNode) []utils.SeriesId {
+	var res = make([]utils.SeriesId, 0)
 	if dicType == CLVC {
 		res = tokenRegexQuery.RegexSearch(queryStr, indexRoots, filePtr, addrCache, invtdCache, tokenMap)
 	}
@@ -278,4 +332,18 @@ func RegexSearchVTokenIndex(dicType CLVDicType, queryStr string, indexRoots *mpT
 		res = tokenRegexQuery.RegexSearch(queryStr, indexRoots, filePtr, addrCache, invtdCache, tokenMap)
 	}
 	return res
+}
+
+func LogTreeListPath(root *gramIndex.LogTreeNode, path string, pathlist *[]string) {
+	if len(root.Children()) == 0 {
+		path = path + root.Data()
+		//fmt.Println(path)
+		*pathlist = append(*pathlist, path)
+		return
+	} else {
+		path = path + root.Data()
+		for _, child := range root.Children() {
+			LogTreeListPath(child, path, pathlist)
+		}
+	}
 }

@@ -264,50 +264,49 @@ func FuzzyReadInver(resMapFuzzy map[utils.SeriesId]struct{}, vgMap map[uint16]st
 
 }
 func FuzzyQueryGramQmaxTrie(rootFuzzyTrie *gramIndex.LogTreeNode, searchStr string, dicRootNode *gramClvc.TrieTreeNode,
-	indexRoots *mpTrie.SearchTreeNode, qmin int, qmax int, distance int, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+	indexRoots *mpTrie.SearchTreeNode, qmin int, qmax int, distance int, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache,resMapFuzzy map[utils.SeriesId]struct{}) {
 
-	resMapFuzzy := make(map[utils.SeriesId]struct{})
 	if len(searchStr) > qmax+distance {
 		fmt.Println("error:查询语句长度大于qmax+distance,无法匹配结果")
-		return resMapFuzzy
+		return
 	}
 	collectionMinStr := make(map[string]struct{})
 	stackNode:=make([]*gramIndex.LogTreeNode,0)
 	countPop:=0
 	QmaxTrieListPath(stackNode,&countPop,rootFuzzyTrie, "", collectionMinStr, searchStr, distance, qmin)
 	if len(collectionMinStr) == 1 {
-		for key, _ := range collectionMinStr { //(key, dicRootNode, indexRootNode, qmin)
+		for key, _ := range collectionMinStr {
 			var vgMap = make(map[uint16]string)
 			gramIndex.VGConsBasicIndex(dicRootNode, qmin, key, vgMap)
 			if len(vgMap) == 1 {
 				resMapFuzzy = FuzzyReadInver(resMapFuzzy, vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache)
-				return resMapFuzzy
+				return
 			} else {
-				arrayNew := make(map[utils.SeriesId]struct{})//gramMatchQuery.MatchSearch2(vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache, nil) todo
-				return arrayNew
+				gramMatchQuery.MatchSearch2(vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache, resMapFuzzy)
+				return
 			}
 		}
 	}
-	for key, _ := range collectionMinStr { //(key, dicRootNode, indexRootNode, qmin)
+	for key, _ := range collectionMinStr {
 		var vgMap = make(map[uint16]string)
 		gramIndex.VGConsBasicIndex(dicRootNode, qmin, key, vgMap)
 		if len(vgMap) == 1 {
 			resMapFuzzy = FuzzyReadInver(resMapFuzzy, vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache)
 		} else {
-			arrayNew := make(map[utils.SeriesId]struct{})//gramMatchQuery.MatchSearch2(vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache, nil) todo
-			resMapFuzzy = UnionMapGramFuzzy(resMapFuzzy, arrayNew)
+			gramMatchQuery.MatchSearch2(vgMap, indexRoots, fileId, filePtr, addrCache, invertedCache, resMapFuzzy)
 		}
 	}
-	return resMapFuzzy
+	return
 }
 
 func FuzzyQueryGramQmaxTries(rootFuzzyTrie *gramIndex.LogTreeNode, searchStr string, root *gramClvc.TrieTreeNode, indexRoots *mpTrie.SearchTreeNode, qmin int, qmax int, distance int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
 	start := time.Now().UnixMicro()
 	var resArr = make(map[utils.SeriesId]struct{})
 	for fileId, _ := range filePtr {
-		resArr = utils.Or(FuzzyQueryGramQmaxTrie(rootFuzzyTrie, searchStr, root, indexRoots, qmin, qmax, distance, fileId, filePtr, addrCache, invertedCache), resArr)
+		FuzzyQueryGramQmaxTrie(rootFuzzyTrie, searchStr, root, indexRoots, qmin, qmax, distance, fileId, filePtr, addrCache, invertedCache, resArr)
 	}
 	end := time.Now().UnixMicro()
-	fmt.Println( float64(end-start)/1000)
+	fmt.Println("近似查询时间:(ms)", float64(end-start)/1000)
+	fmt.Println("近似结果条数:", len(resArr))
 	return resArr
 }

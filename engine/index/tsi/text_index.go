@@ -38,7 +38,7 @@ type TextIndex struct {
 func NewTextIndex(opts *Options) (*TextIndex, error) {
 	textIndex := &TextIndex{
 		FieldKeys: make(map[string][]string),
-		ClvIndex:  clvIndex.NewCLVIndex(clvIndex.VTOKEN, opts.path+"/text"),
+		ClvIndex:  clvIndex.NewCLVIndex(clvIndex.VGRAM, opts.path+"/text"),
 	}
 	textIndex.Path = opts.path + "/text"
 	str := make([]string, 1)
@@ -101,66 +101,84 @@ func (idx *TextIndex) CreateIndexIfNotExists(primaryIndex PrimaryIndex, row *inf
 	return 0, nil
 }
 
-func (idx *TextIndex) searchTSIDsByBinaryExpr(n *influxql.BinaryExpr, measurementName string) (map[utils.SeriesId]struct{}, error) {
+func (idx *TextIndex) searchTSIDsByBinaryExpr(n *influxql.BinaryExpr, measurementName string) (map[utils.SeriesId]struct{}, []utils.SeriesId, error) {
 	key, _ := n.LHS.(*influxql.VarRef)
 	value, _ := n.RHS.(*influxql.StringLiteral)
+	var resMap = make(map[utils.SeriesId]struct{})
+	var resSlice = make([]utils.SeriesId, 0)
 	if n.Op == influxql.MATCH {
-		return idx.ClvIndex.CLVSearch(measurementName, key.Val, clvIndex.MATCHSEARCH, value.Val), nil
+		resMap, resSlice = idx.ClvIndex.CLVSearch(measurementName, key.Val, clvIndex.MATCHSEARCH, value.Val)
+		return resMap, resSlice, nil
 	} else if n.Op == influxql.FUZZY {
-		return idx.ClvIndex.CLVSearch(measurementName, key.Val, clvIndex.FUZZYSEARCH, value.Val), nil
+		resMap, resSlice = idx.ClvIndex.CLVSearch(measurementName, key.Val, clvIndex.FUZZYSEARCH, value.Val)
+		return resMap, resSlice, nil
 	} else if n.Op == influxql.REGEX {
-		return idx.ClvIndex.CLVSearch(measurementName, key.Val, clvIndex.REGEXSEARCH, value.Val), nil
+		resMap, resSlice = idx.ClvIndex.CLVSearch(measurementName, key.Val, clvIndex.REGEXSEARCH, value.Val)
+		return resMap, resSlice, nil
 	} else {
-		return make(map[utils.SeriesId]struct{}), nil
+		return make(map[utils.SeriesId]struct{}), make([]utils.SeriesId, 0), nil
 	}
 }
 
-func (idx *TextIndex) searchTSIDsInternal(expr influxql.Expr, measurementName string) (map[utils.SeriesId]struct{}, error) {
+func (idx *TextIndex) searchTSIDsInternal(expr influxql.Expr, measurementName string) (map[utils.SeriesId]struct{}, []utils.SeriesId, error) {
 	if expr == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	switch expr := expr.(type) {
 	case *influxql.BinaryExpr:
 		switch expr.Op {
 		case influxql.AND, influxql.OR:
 			if expr.Op == influxql.AND {
-				l, _ := idx.searchTSIDsInternal(expr.LHS, measurementName)
-				r, _ := idx.searchTSIDsInternal(expr.RHS, measurementName)
-				return utils.And(l, r), nil
+				lmap, lslice, _ := idx.searchTSIDsInternal(expr.LHS, measurementName)
+				rmap, rslice, _ := idx.searchTSIDsInternal(expr.RHS, measurementName)
+				return utils.And(lmap, lslice, rmap, rslice), nil, nil
 			} else {
-				l, _ := idx.searchTSIDsInternal(expr.LHS, measurementName)
-				r, _ := idx.searchTSIDsInternal(expr.RHS, measurementName)
-				return utils.Or(l, r), nil
+				lmap, lslice, _ := idx.searchTSIDsInternal(expr.LHS, measurementName)
+				rmap, rslice, _ := idx.searchTSIDsInternal(expr.RHS, measurementName)
+				return utils.Or(lmap, lslice, rmap, rslice), nil, nil
 			}
 		default:
 			return idx.searchTSIDsByBinaryExpr(expr, measurementName)
-
 		}
 
 	case *influxql.ParenExpr:
 		return idx.searchTSIDsInternal(expr.Expr, measurementName)
 	default:
-		return nil, nil
+		return nil, nil, nil
 	}
 }
 
 func (idx *TextIndex) Search(primaryIndex PrimaryIndex, span *tracing.Span, name []byte, opt *query.ProcessorOptions) (GroupSeries, error) {
-	//start := time.Now().UnixMicro()
 	measurementName := opt.Name
-	clvSids, _ := idx.searchTSIDsInternal(opt.Condition, measurementName)
+	resMap, resSlice, _ := idx.searchTSIDsInternal(opt.Condition, measurementName)
+	resType := false
 	mapClvSids := make(map[uint64][]int64)
-	for keys, _ := range clvSids {
-		key := keys.Id
-		val := keys.Time
-		if _, ok := mapClvSids[key]; !ok {
-			timeArr := []int64{}
-			timeArr = append(timeArr, val)
-			mapClvSids[key] = timeArr
-		} else {
-			mapClvSids[key] = append(mapClvSids[key], val)
+	if len(resMap) > 0 {
+		for keys, _ := range resMap {
+			key := keys.Id
+			val := keys.Time
+			if _, ok := mapClvSids[key]; !ok {
+				timeArr := []int64{}
+				timeArr = append(timeArr, val)
+				mapClvSids[key] = timeArr
+			} else {
+				mapClvSids[key] = append(mapClvSids[key], val)
+			}
+		}
+	} else if len(resSlice) > 0 {
+		resType = true
+		for id, _ := range resSlice {
+			key := resSlice[id].Id
+			val := resSlice[id].Time
+			if _, ok := mapClvSids[key]; !ok {
+				timeArr := []int64{}
+				timeArr = append(timeArr, val)
+				mapClvSids[key] = timeArr
+			} else {
+				mapClvSids[key] = append(mapClvSids[key], val)
+			}
 		}
 	}
-
 	mergeSetIndex := primaryIndex.(*MergeSetIndex)
 	var indexKeyBuf []byte
 	groupSeries := make(GroupSeries, 1)
@@ -172,7 +190,6 @@ func (idx *TextIndex) Search(primaryIndex PrimaryIndex, span *tracing.Span, name
 			influx.IndexKeyToTags(indexKeyBuf, true, &tagsBuf)
 			seriesKey := getSeriesKeyBuf()
 			seriesKey = influx.Parse2SeriesKey(indexKeyBuf, seriesKey)
-			//tagSetInfo.Append(id, seriesKey, nil, tagsBuf)
 			tagSetInfo.IDs = append(tagSetInfo.IDs, id)
 			tagSetInfo.SeriesKeys = append(tagSetInfo.SeriesKeys, seriesKey)
 			tagSetInfo.TagsVec = append(tagSetInfo.TagsVec, tagsBuf)
@@ -180,16 +197,15 @@ func (idx *TextIndex) Search(primaryIndex PrimaryIndex, span *tracing.Span, name
 			var tmp = make([]int64, 0)
 			tmp = append(tmp, timeArr...)
 			sort.Slice(tmp, func(i, j int) bool { return tmp[i] < tmp[j] })
+			if resType == true {
+				tmp = utils.UniqueTimeSlice(tmp)
+			}
+			fmt.Println("unique sid len :", len(tmp))
 			tagSetInfo.Timestamps = append(tagSetInfo.Timestamps, tmp)
 			indexKeyBuf = indexKeyBuf[:0]
 		}
 		groupSeries[i] = tagSetInfo
 	}
-
-	//end := time.Now().UnixMicro()
-	fmt.Println(len(clvSids))
-	//fmt.Println("all-time(ms):")
-	//fmt.Println(float64(end-start) / 1000)
 	fmt.Println("===============================")
 	fmt.Println("===============================")
 	return groupSeries, nil

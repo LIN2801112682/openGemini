@@ -108,26 +108,26 @@ func RegexStandardization(re string) string {
 	return re
 }
 
-func RegexSearch(re string, trietree *gramClvc.TrieTree, qmin int, index *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+func RegexSearch(re string, trietree *gramClvc.TrieTree, qmin int, index *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []utils.SeriesId {
 	fmt.Println("正则表达式:", re)
 	start := time.Now().UnixMicro()
-	var resArr = make(map[utils.SeriesId]struct{}, 0)
+	var resArr = make([]utils.SeriesId, 0)
 	for fileId, _ := range filePtr {
-		resArr = utils.Or(resArr, RegexSearch1(re, trietree, qmin, index, fileId, filePtr, addrCache, invertedCache))
+		resArr = append(resArr, RegexSearch1(re, trietree, qmin, index, fileId, filePtr, addrCache, invertedCache)...)
 	}
 	end := time.Now().UnixMicro()
-	fmt.Println("总用时:", end-start)
-	fmt.Println("结果数:", len(resArr))
+	fmt.Println("正则查询时间(ms)：", float64(end-start)/1000.0)
+	fmt.Println("正则结果条数：", len(resArr))
 	return resArr
 }
 
-func RegexSearch1(re string, trietree *gramClvc.TrieTree, qmin int, index *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+func RegexSearch1(re string, trietree *gramClvc.TrieTree, qmin int, index *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) []utils.SeriesId {
 	split := strings.Contains(re, ".")
-	result := make(map[utils.SeriesId]struct{}, 0)
+	result := make([]utils.SeriesId, 0)
 	if !split {
 		sidmap := MatchRegex(re, trietree, index, fileId, filePtr, addrCache, invertedCache)
 		for i := 0; i < len(sidmap); i++ {
-			result[sidmap[i].sid] = struct{}{}
+			result = append(result, sidmap[i].sid)
 		}
 	} else {
 		isnoterror, rplist := GenerateRegexPlusList(re, qmin)
@@ -137,7 +137,7 @@ func RegexSearch1(re string, trietree *gramClvc.TrieTree, qmin int, index *mpTri
 		} else {
 			sidmap := MatchRegexPlusList(rplist, trietree, index, fileId, filePtr, addrCache, invertedCache)
 			for key := range sidmap {
-				result[key] = struct{}{}
+				result = append(result, key)
 			}
 		}
 	}

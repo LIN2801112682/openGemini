@@ -251,7 +251,7 @@ func (clvIndexNode *CLVIndexNode) CreateCLVVTokenIndexIfNotExists(dicType CLVDic
 		PerTime += uint64(end2-start2) / 1000
 		fmt.Println("persistence cost time(ms): ", float64((end2-start2)/1000))
 		clvIndexNode.VtokenIndexRoot = tokenIndex.NewIndexTree(QMINGRAM, QMAXGRAM)
-		if PersitenceId == 0 {
+		if PersitenceId == 19 {
 			fmt.Println("index cost all time =======", MemoTime)
 			fmt.Println("persistence cost all time =======", PerTime)
 		}

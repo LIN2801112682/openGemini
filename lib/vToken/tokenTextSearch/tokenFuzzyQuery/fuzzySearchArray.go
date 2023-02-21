@@ -77,19 +77,16 @@ func VerifyED(searStr string, dataStr string, distance int) bool {
 	}
 }
 
-func UnionMapPos(map1 map[utils.SeriesId]struct{}, mapPos map[utils.SeriesId][]uint16) map[utils.SeriesId]struct{} {
+func UnionMapPos(map1 *[]utils.SeriesId, mapPos map[utils.SeriesId][]uint16) *[]utils.SeriesId {
 	if len(mapPos) == 0 {
 		return map1
 	}
 	for key, _ := range mapPos {
-		if _, ok := map1[key]; !ok {
-			map1[key] = struct{}{}
-
-		}
+		*map1=append(*map1, key)
 	}
 	return map1
 }
-func FuzzySearchChildrens(indexNode *mpTrie.SearchTreeNode, resMapFuzzy map[utils.SeriesId]struct{}, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+func FuzzySearchChildrens(indexNode *mpTrie.SearchTreeNode, resMapFuzzy *[]utils.SeriesId, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) *[]utils.SeriesId {
 	if indexNode != nil {
 		for _, child := range indexNode.Children() {
 			if len(child.InvtdCheck()) > 0 {
@@ -125,8 +122,7 @@ func FuzzySearchChildrens(indexNode *mpTrie.SearchTreeNode, resMapFuzzy map[util
 	return resMapFuzzy
 }
 
-func FuzzySearchAddr(resMapFuzzy map[utils.SeriesId]struct{}, addrOffsets map[uint64]uint16, fileId int, filePtr map[int]*os.File, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
-
+func FuzzySearchAddr(resMapFuzzy *[]utils.SeriesId, addrOffsets map[uint64]uint16, fileId int, filePtr map[int]*os.File, invertedCache *mpTrie.InvertedCache) *[]utils.SeriesId {
 	if addrOffsets == nil || len(addrOffsets) == 0 {
 		return resMapFuzzy
 	}
@@ -137,7 +133,8 @@ func FuzzySearchAddr(resMapFuzzy map[utils.SeriesId]struct{}, addrOffsets map[ui
 	}
 	return resMapFuzzy
 }
-func TokenFuzzyReadInver(resMapFuzzy map[utils.SeriesId]struct{}, token string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+
+func TokenFuzzyReadInver(resMapFuzzy *[]utils.SeriesId, token string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) *[]utils.SeriesId {
 	tokenArr := []string{token}
 	var invertIndexOffset uint64
 	var addrOffset uint64
@@ -165,84 +162,117 @@ func TokenFuzzyReadInver(resMapFuzzy map[utils.SeriesId]struct{}, token string, 
 		}
 
 	}
-
 	return resMapFuzzy
 }
 
-func FuzzySearchComparedWithES(searchSingleToken string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, distance, prefixlen int) map[utils.SeriesId]struct{} {
-	sum := 0
-	sumPass := 0
-	mapRes := make(map[utils.SeriesId]struct{})
+func FuzzySearchComparedWithES(shortIndex map[int]map[string]struct{},longIndex map[string]map[int]map[utils.FuzzyPrefixGram]struct{},searchSingleToken string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, distance, prefixlen int,mapRes *[]utils.SeriesId) {
 	q := prefixlen
 	lensearchToken := len(searchSingleToken)
-	var qgramSearch = make([]utils.FuzzyPrefixGram, 0)
-	for i := 0; i < lensearchToken-q+1; i++ {
-		qgramSearch = append(qgramSearch, utils.NewFuzzyPrefixGram(searchSingleToken[i:i+q], int8(i)))
-	}
-	sort.SliceStable(qgramSearch, func(i, j int) bool {
-		if qgramSearch[i].Gram() < qgramSearch[j].Gram() {
-			return true
-		}
-		return false
-	})
-	prefixgramcount := q*distance + 1
-
-	var mapsearchGram = make(map[string][]int8)
-	if lensearchToken-q+1 >= prefixgramcount {
-		for i := 0; i < prefixgramcount; i++ {
-			mapsearchGram[qgramSearch[i].Gram()] = append(mapsearchGram[qgramSearch[i].Gram()], qgramSearch[i].Pos())
-		}
-	}
-	for i, _ := range indexRoot.Children() {
-		lenChildrendata := len(indexRoot.Children()[i].Data())
-		if lenChildrendata > lensearchToken+distance || lenChildrendata < lensearchToken-distance {
-			continue
-		} else if lenChildrendata-q+1 < prefixgramcount || lensearchToken-q+1 < prefixgramcount {
-			sum++
-			verifyresult := VerifyED(searchSingleToken, indexRoot.Children()[i].Data(), distance)
-			if verifyresult {
-				sumPass++
-				mapRes = TokenFuzzyReadInver(mapRes, indexRoot.Children()[i].Data(), indexRoot, fileId, filePtr, addrCache, invertedCache)
-			}
-			continue
-		} else {
-			flagCommon := 0
-			for k := 0; k < prefixgramcount; k++ {
-				_, ok := mapsearchGram[indexRoot.Children()[i].PrefixGrams()[k].Gram()]
-				if ok {
-					for n := 0; n < len(mapsearchGram[indexRoot.Children()[i].PrefixGrams()[k].Gram()]); n++ {
-						if AbsInt(mapsearchGram[indexRoot.Children()[i].PrefixGrams()[k].Gram()][n]-indexRoot.Children()[i].PrefixGrams()[k].Pos()) <= int8(distance) {
-							flagCommon = 1
-							sum++
-							verifyresult2 := VerifyED(searchSingleToken, indexRoot.Children()[i].Data(), distance)
-
-							if verifyresult2 {
-								sumPass++
-								mapRes = TokenFuzzyReadInver(mapRes, indexRoot.Children()[i].Data(), indexRoot, fileId, filePtr, addrCache, invertedCache)
-							}
-							break
-						}
+	if lensearchToken<q*distance+1+q-1{
+		for key,value:=range shortIndex{
+			if key > lensearchToken+distance || key < lensearchToken-distance {
+				continue
+			}else{
+				for str:=range value{
+					verifyresult := VerifyED(searchSingleToken, str, distance)
+					if verifyresult {
+						mapRes = TokenFuzzyReadInver(mapRes, str, indexRoot, fileId, filePtr, addrCache, invertedCache)
 					}
-					if flagCommon == 1 {
-						break
+				}
+				continue
+			}
+		}
+
+		indexInver:=make(map[string]struct{})
+		for _,preIndex:=range longIndex{
+			for lenData,indexData:=range preIndex {
+				if lenData>lensearchToken+distance||lenData<lensearchToken-distance {
+					continue
+				}else {
+					for data:=range indexData{
+						indexInver[data.Gram()]= struct{}{}
 					}
 				}
 			}
-			continue
+
+		}
+		for key, _ := range indexInver {
+			verifyresult3 := VerifyED(searchSingleToken, key, distance)
+			if verifyresult3 {
+				mapRes = TokenFuzzyReadInver(mapRes, key, indexRoot, fileId, filePtr, addrCache, invertedCache)
+			}
+		}
+	}else{
+		var qgramSearch = make([]utils.FuzzyPrefixGram, 0)
+		for i := 0; i < lensearchToken-q+1; i++ {
+			qgramSearch = append(qgramSearch, utils.NewFuzzyPrefixGram(searchSingleToken[i:i+q], int8(i)))
+		}
+		sort.SliceStable(qgramSearch, func(i, j int) bool {
+			if qgramSearch[i].Gram() < qgramSearch[j].Gram() {
+				return true
+			}
+			return false
+		})
+		prefixgramcount := q*distance + 1
+
+		var mapsearchGram = make(map[string][]int8)
+		if lensearchToken-q+1 >= prefixgramcount {
+			for i := 0; i < prefixgramcount; i++ {
+				mapsearchGram[qgramSearch[i].Gram()] = append(mapsearchGram[qgramSearch[i].Gram()], qgramSearch[i].Pos())
+			}
+		}
+
+		for key,value:=range shortIndex{
+			if key > lensearchToken+distance || key < lensearchToken-distance {
+				continue
+			}else{
+				for str:=range value{
+					verifyresult := VerifyED(searchSingleToken, str, distance)
+					if verifyresult {
+						mapRes = TokenFuzzyReadInver(mapRes, str, indexRoot, fileId, filePtr, addrCache, invertedCache)
+					}
+				}
+				continue
+			}
+		}
+
+		indexInver:=make(map[string]struct{})
+		for key,value:=range mapsearchGram{
+			for index,preIndex:=range longIndex[key]{
+				if index>lensearchToken+distance||index<lensearchToken-distance{
+					continue
+				}else{
+					for mapPre:=range preIndex{
+						for n := 0; n < len(value); n++ {
+							if AbsInt(value[n]-mapPre.Pos()) <= int8(distance) {
+								indexInver[mapPre.Gram()]= struct{}{}
+								break
+							}
+						}
+					}
+
+				}
+			}
+		}
+		for key, _ := range indexInver {
+			verifyresult2 := VerifyED(searchSingleToken, key, distance)
+			if verifyresult2 {
+				mapRes = TokenFuzzyReadInver(mapRes, key, indexRoot, fileId, filePtr, addrCache, invertedCache)
+			}
 		}
 	}
-	return mapRes
-}
 
-func FuzzyTokenQueryTries(searchStr string, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, distance, prefixlen int) map[utils.SeriesId]struct{} {
+}
+func FuzzyTokenQueryTries(shortFuzzyIndex map[int]map[string]struct{},longFuzzyIndex  map[string]map[int]map[utils.FuzzyPrefixGram]struct{},searchStr string, indexRoots *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, distance, prefixlen int) []utils.SeriesId {
 	start := time.Now().UnixMicro()
-	var resArr = make(map[utils.SeriesId]struct{})
-	var mapTemp = make([]map[utils.SeriesId]struct{}, 0)
+	var resMap = make([]utils.SeriesId,0)
 	for fileId, _ := range filePtr {
-		mapTemp = append(mapTemp, FuzzySearchComparedWithES(searchStr, indexRoots, fileId, filePtr, addrCache, invertedCache, distance, prefixlen))
+		FuzzySearchComparedWithES(shortFuzzyIndex,longFuzzyIndex,searchStr, indexRoots, fileId, filePtr, addrCache, invertedCache, distance, prefixlen,&resMap)
 	}
 	end := time.Now().UnixMicro()
-	resArr = utils.OrMaps(mapTemp...)
+	fmt.Println("allTime:")
 	fmt.Println(float64(end-start) / 1000)
-	return resArr
+	fmt.Println("res count--------")
+	fmt.Println(len(resMap))
+	return resMap
 }

@@ -27,25 +27,100 @@ func NewSeriesId(id uint64, t int64) SeriesId {
 	}
 }
 
-func And(s1, s2 map[SeriesId]struct{}) map[SeriesId]struct{} {
+func And(m1 map[SeriesId]struct{}, s1 []SeriesId, m2 map[SeriesId]struct{}, s2 []SeriesId) map[SeriesId]struct{} {
 	result := make(map[SeriesId]struct{})
-	for key, _ := range s2 {
-		if _, ok := s1[key]; !ok {
-			result[key] = struct{}{}
+	if len(m1) > 0 && len(m2) > 0 {
+		for key, _ := range m2 {
+			if _, ok := m1[key]; ok {
+				result[key] = struct{}{}
+			}
 		}
+		return result
+	} else if len(s1) > 0 && len(s2) > 0 {
+		temp1 := make(map[SeriesId]struct{})
+		temp2 := make(map[SeriesId]struct{})
+		for _, val1 := range s1 {
+			temp1[val1] = struct{}{}
+		}
+		for _, val2 := range s2 {
+			temp2[val2] = struct{}{}
+		}
+		for key, _ := range temp2 {
+			if _, ok := temp1[key]; ok {
+				result[key] = struct{}{}
+			}
+		}
+		return result
+	} else if len(m1) > 0 && len(s2) > 0 {
+		temp2 := make(map[SeriesId]struct{})
+		for _, val2 := range s2 {
+			temp2[val2] = struct{}{}
+		}
+		for key, _ := range temp2 {
+			if _, ok := m1[key]; ok {
+				result[key] = struct{}{}
+			}
+		}
+		return result
+	} else if len(m2) > 0 && len(s1) > 0 {
+		temp1 := make(map[SeriesId]struct{})
+		for _, val1 := range s1 {
+			temp1[val1] = struct{}{}
+		}
+		for key, _ := range temp1 {
+			if _, ok := m2[key]; ok {
+				result[key] = struct{}{}
+			}
+		}
+		return result
 	}
 	return result
 }
 
-func Or(s1, s2 map[SeriesId]struct{}) map[SeriesId]struct{} {
+func Or(m1 map[SeriesId]struct{}, s1 []SeriesId, m2 map[SeriesId]struct{}, s2 []SeriesId) map[SeriesId]struct{} {
 	result := make(map[SeriesId]struct{})
-	for key, _ := range s1 {
-		result[key] = struct{}{}
-	}
-	for key, _ := range s2 {
-		if _, ok := result[key]; !ok {
+	if len(m1) > 0 && len(m2) > 0 {
+		for key, _ := range m1 {
 			result[key] = struct{}{}
 		}
+		for key, _ := range m2 {
+			if _, ok := result[key]; !ok {
+				result[key] = struct{}{}
+			}
+		}
+		return result
+	} else if len(s1) > 0 && len(s2) > 0 {
+		for _, v1 := range s1 {
+			if _, ok := result[v1]; !ok {
+				result[v1] = struct{}{}
+			}
+		}
+		for _, v2 := range s2 {
+			if _, ok := result[v2]; !ok {
+				result[v2] = struct{}{}
+			}
+		}
+		return result
+	} else if len(m1) > 0 && len(s2) > 0 {
+		for key, _ := range m1 {
+			result[key] = struct{}{}
+		}
+		for _, v2 := range s2 {
+			if _, ok := result[v2]; !ok {
+				result[v2] = struct{}{}
+			}
+		}
+		return result
+	} else if len(m2) > 0 && len(s1) > 0 {
+		for key, _ := range m2 {
+			result[key] = struct{}{}
+		}
+		for _, v1 := range s1 {
+			if _, ok := result[v1]; !ok {
+				result[v1] = struct{}{}
+			}
+		}
+		return result
 	}
 	return result
 }

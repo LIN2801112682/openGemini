@@ -17,6 +17,7 @@ package tokenClvc
 
 import (
 	"github.com/openGemini/openGemini/lib/utils"
+	"strings"
 )
 
 type TrieTree struct {
@@ -90,4 +91,40 @@ func (tree *TrieTree) UpdateRootFrequency() {
 		tree.root.frequency += child.frequency
 	}
 	tree.root.frequency--
+}
+
+func ListPath(root  *TrieTreeNode,path string,pathlist *[]string){
+	if len(root.Children())==0 {
+		path=path+" "+root.Data()
+		//fmt.Println(path)
+		*pathlist = append(*pathlist,path)
+		return
+	} else {
+		path=path+" "+root.Data()
+		for _, child := range root.Children() {
+			ListPath(child,path,pathlist)
+		}
+	}
+}
+
+func ReverseStringSplitWhite(str string) []string{
+	r:=strings.Fields(str)
+	for i, j := 0, len(r)-1; i < j; i, j = i+1, j-1 {
+		r[i], r[j] = r[j], r[i]
+	}
+	return r
+}
+func ReverseDicTree(tree *TrieTreeNode,qmin int,qmax int) *TrieTree{
+	var pathlist []string
+	ListPath(tree,"",&pathlist)
+	//fmt.Println(pathlist)
+	reversetree := NewTrieTree(qmin, qmax)
+	for i,_:=range pathlist{
+		strTrie:=ReverseStringSplitWhite(pathlist[i])
+		reversetree.InsertIntoTrieTree(&strTrie)
+	}
+	reversetree.UpdateRootFrequency()
+	//reversetree.PrintTree()
+	//fmt.Println()
+	return reversetree
 }

@@ -83,3 +83,15 @@ func LogSeriesToMap(buffDicStrings []LogSeries) map[SeriesId]string {
 	}
 	return res
 }
+
+func UniqueTimeSlice(m []int64) []int64 {
+	d := make([]int64, 0)
+	tempMap := make(map[int64]bool, len(m))
+	for _, v := range m {
+		if tempMap[v] == false {
+			tempMap[v] = true
+			d = append(d, v)
+		}
+	}
+	return d
+}

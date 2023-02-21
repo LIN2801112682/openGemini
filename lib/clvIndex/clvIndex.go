@@ -118,8 +118,9 @@ func (clvIndex *CLVIndex) CreateCLVIndex(log string, tsid uint64, timeStamp int6
 	clvIndex.indexTreeMap[measurementAndFieldKey].CreateCLVIndexIfNotExists(log, tsid, timeStamp)
 }
 
-func (clvIndex *CLVIndex) CLVSearch(measurementName string, fieldKey string, queryType QuerySearch, queryStr string) map[utils.SeriesId]struct{} {
-	var res map[utils.SeriesId]struct{}
+func (clvIndex *CLVIndex) CLVSearch(measurementName string, fieldKey string, queryType QuerySearch, queryStr string) (map[utils.SeriesId]struct{}, []utils.SeriesId) {
+	var resMap = make(map[utils.SeriesId]struct{})
+	var resSlice = make([]utils.SeriesId, 0)
 	option := NewQueryOption(measurementName, fieldKey, queryType, queryStr)
 	measurementAndFieldKey := NewMeasurementAndFieldKey(measurementName, fieldKey)
 	if _, ok := clvIndex.indexTreeMap[measurementAndFieldKey]; ok {
@@ -128,9 +129,10 @@ func (clvIndex *CLVIndex) CLVSearch(measurementName string, fieldKey string, que
 		if len(clvIndex.search.fileNames) == 0 {
 			clvIndex.search.SearchIndexTreeFromDisk(clvIndex.indexType, measurementName, fieldKey, clvIndex.path)
 		}
-		res = CLVSearchIndex(indexType, dic.DicType, option, dic, clvIndex.search.indexRoots, clvIndex.search.filePtr, clvIndex.search.addrCache, clvIndex.search.invtdCache, clvIndex.search.logTree, clvIndex.search.tokenMap)
+		resMap, resSlice = CLVSearchIndex(indexType, dic.DicType, option, dic, clvIndex.search.indexRoots, clvIndex.search.filePtr, clvIndex.search.addrCache, clvIndex.search.invtdCache, clvIndex.search.logTree, clvIndex.search.tokenMap, clvIndex.search.shortFuzzyIndex, clvIndex.search.longFuzzyIndex, clvIndex.search.gramShortFuzzyIndex, clvIndex.search.gramLongFuzzyIndex)
 	} else {
-		res = nil
+		resMap = nil
+		resSlice = nil
 	}
-	return res
+	return resMap, resSlice
 }

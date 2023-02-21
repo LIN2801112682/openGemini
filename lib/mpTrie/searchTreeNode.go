@@ -8,32 +8,32 @@ import (
 )
 
 type SearchTreeNode struct {
-	data        string
-	freq        int
-	children    map[int]*SearchTreeNode
-	addrCheck   map[int]*AddrInfo
-	invtdCheck  map[int]*InvtdInfo //这两个int 都是fileId
-	prefixGrams []utils.FuzzyPrefixGram
-	isleaf      bool
+	data       string
+	freq       int
+	children   map[int]*SearchTreeNode
+	addrCheck  map[int]*AddrInfo
+	invtdCheck map[int]*InvtdInfo
+	//prefixGrams []utils.FuzzyPrefixGram
+	isleaf bool
 }
 
-func (node *SearchTreeNode) PrefixGrams() []utils.FuzzyPrefixGram {
-	return node.prefixGrams
-}
-
-func (node *SearchTreeNode) SetPrefixGrams(prefixGrams []utils.FuzzyPrefixGram) {
-	node.prefixGrams = prefixGrams
-}
+//func (node *SearchTreeNode) PrefixGrams() []utils.FuzzyPrefixGram {
+//	return node.prefixGrams
+//}
+//
+//func (node *SearchTreeNode) SetPrefixGrams(prefixGrams []utils.FuzzyPrefixGram) {
+//	node.prefixGrams = prefixGrams
+//}
 
 func NewSearchTreeNode(data string) *SearchTreeNode {
 	return &SearchTreeNode{
-		data:        data,
-		freq: 0,
-		children:    make(map[int]*SearchTreeNode),
-		addrCheck:   make(map[int]*AddrInfo),
-		invtdCheck:  make(map[int]*InvtdInfo),
-		prefixGrams: make([]utils.FuzzyPrefixGram, 0),
-		isleaf:      false,
+		data:       data,
+		freq:       0,
+		children:   make(map[int]*SearchTreeNode),
+		addrCheck:  make(map[int]*AddrInfo),
+		invtdCheck: make(map[int]*InvtdInfo),
+		//prefixGrams: make([]utils.FuzzyPrefixGram, 0),
+		isleaf: false,
 	}
 }
 
@@ -173,7 +173,7 @@ func (node *SearchTreeNode) GetGramMap(q int) map[string][]*SearchTreeNode {
 	return result
 }
 
-func (node *SearchTreeNode) TokenPrefixGrams(prefixlen, distance int)  {
+/*func (node *SearchTreeNode) TokenPrefixGrams(prefixlen, distance int)  {
 	prefixgramcount := prefixlen * distance + 1
 	for i, _ := range node.Children() {
 		qgramData := make([]utils.FuzzyPrefixGram, 0)
@@ -191,18 +191,18 @@ func (node *SearchTreeNode) TokenPrefixGrams(prefixlen, distance int)  {
 				return false
 			})
 			if len(qgramData) > 0 {
-				node.children[i].SetPrefixGrams(qgramData[:lenChildrendata-prefixlen+1])
+				node.children[i].SetPrefixGrams(qgramData[:prefixlen*distance+1])
 			}
 		}
 	}
-}
+}*/
 
 func (node *SearchTreeNode) printsearchTreeNode(file map[int]*os.File, level int, addrcache *AddrCache, invtdcache *InvertedCache) {
 	fmt.Println()
 	for i := 0; i < level; i++ {
 		fmt.Print("      ")
 	}
-	fmt.Print(node.data, " - ", node.freq, " - ", node.isleaf, " -prefixGram: ", node.PrefixGrams(), " - ")
+	fmt.Print(node.data, " - ", node.freq, " - ", node.isleaf) //, " -prefixGram: ", node.PrefixGrams(), " - "
 	for fileid, addrInfo := range node.AddrCheck() {
 		addrblk := addrcache.Get(addrInfo.addrblkOffset, fileid)
 		if addrblk != nil && addrInfo.addrlen != 0 {
@@ -234,4 +234,168 @@ func (node *SearchTreeNode) printsearchTreeNode(file map[int]*os.File, level int
 	for _, node := range node.children {
 		node.printsearchTreeNode(file, level+1, addrcache, invtdcache)
 	}
+}
+
+func GramPrefixGrams(str string, prefixlen int, distance int) []utils.FuzzyPrefixGram {
+	qgramData := make([]utils.FuzzyPrefixGram, 0)
+	lenData := len(str)
+	for m := 0; m < lenData-prefixlen+1; m++ {
+		qgramData = append(qgramData, utils.NewFuzzyPrefixGram(str[m:m+prefixlen], int8(m)))
+	}
+	sort.SliceStable(qgramData, func(m, n int) bool {
+		if qgramData[m].Gram() <= qgramData[n].Gram() {
+			return true
+		}
+		return false
+	})
+	return qgramData[:prefixlen*distance+1]
+}
+
+func (node *SearchTreeNode) GeneratePrefixIndex(prefixLen int, distance int) (map[int]map[string]struct{}, map[string]map[int]map[utils.FuzzyPrefixGram]struct{}) {
+	limitLen := prefixLen*distance + 1 + prefixLen - 1
+	shortIndex := make(map[int]map[string]struct{})
+	longIndex := make(map[string]map[int]map[utils.FuzzyPrefixGram]struct{})
+	flagIndex := make(map[string]struct{})
+	for childIndex, _ := range node.Children() {
+		substring := node.Children()[childIndex].Data()
+		if len(substring) >= limitLen {
+			_, ok1 := flagIndex[substring]
+			if ok1 {
+				continue
+			} else {
+				flagIndex[substring] = struct{}{}
+				qgramData := GramPrefixGrams(substring, prefixLen, distance)
+				for n := 0; n < len(qgramData); n++ {
+					longIndexData := utils.NewFuzzyPrefixGram(substring, qgramData[n].Pos())
+					_, ok2 := longIndex[qgramData[n].Gram()]
+					if !ok2 {
+						longIndexString := make(map[int]map[utils.FuzzyPrefixGram]struct{})
+						longIndexString[len(substring)] = make(map[utils.FuzzyPrefixGram]struct{})
+						longIndexString[len(substring)][longIndexData] = struct{}{}
+						longIndex[qgramData[n].Gram()] = longIndexString
+					} else {
+						_, ok3 := longIndex[qgramData[n].Gram()][len(substring)]
+						if !ok3 {
+							longIndex[qgramData[n].Gram()][len(substring)] = make(map[utils.FuzzyPrefixGram]struct{})
+							longIndex[qgramData[n].Gram()][len(substring)][longIndexData] = struct{}{}
+						} else {
+							longIndex[qgramData[n].Gram()][len(substring)][longIndexData] = struct{}{}
+						}
+					}
+				}
+			}
+		} else {
+			_, ok4 := shortIndex[len(substring)]
+			if !ok4 {
+				shortMap := make(map[string]struct{})
+				shortMap[substring] = struct{}{}
+				shortIndex[len(substring)] = shortMap
+			} else {
+				shortIndex[len(substring)][substring] = struct{}{}
+			}
+		}
+
+	}
+	return shortIndex, longIndex
+}
+func (node *SearchTreeNode) FuzzyGramGeneratePrefixIndex(logString []string, prefixLen int, distance int, qmin int, qmax int) (map[int]map[string]struct{}, map[string]map[int]map[utils.FuzzyPrefixGram]struct{}) {
+	limitLen := prefixLen*distance + 1 + prefixLen - 1
+	shortIndex := make(map[int]map[string]struct{})
+	longIndex := make(map[string]map[int]map[utils.FuzzyPrefixGram]struct{})
+	flagIndex := make(map[string]struct{})
+	for logIndex := range logString {
+		str := logString[logIndex]
+		if len(str) >= qmax {
+			for k := qmin; k <= qmax; k++ {
+				for i := 0; i < len(str)-k+1; i++ {
+					substring := str[i : i+k]
+					if len(substring) >= limitLen {
+						_, ok1 := flagIndex[substring]
+						if ok1 {
+							continue
+						} else {
+							flagIndex[substring] = struct{}{}
+							qgramData := GramPrefixGrams(substring, prefixLen, distance)
+							for n := 0; n < len(qgramData); n++ {
+								longIndexData := utils.NewFuzzyPrefixGram(substring, qgramData[n].Pos())
+								_, ok2 := longIndex[qgramData[n].Gram()]
+								if !ok2 {
+									longIndexString := make(map[int]map[utils.FuzzyPrefixGram]struct{})
+									longIndexString[len(substring)] = make(map[utils.FuzzyPrefixGram]struct{})
+									longIndexString[len(substring)][longIndexData] = struct{}{}
+									longIndex[qgramData[n].Gram()] = longIndexString
+								} else {
+									_, ok3 := longIndex[qgramData[n].Gram()][len(substring)]
+									if !ok3 {
+										longIndex[qgramData[n].Gram()][len(substring)] = make(map[utils.FuzzyPrefixGram]struct{})
+										longIndex[qgramData[n].Gram()][len(substring)][longIndexData] = struct{}{}
+									} else {
+										longIndex[qgramData[n].Gram()][len(substring)][longIndexData] = struct{}{}
+									}
+								}
+							}
+						}
+					} else {
+						_, ok4 := shortIndex[len(substring)]
+						if !ok4 {
+							shortMap := make(map[string]struct{})
+							shortMap[substring] = struct{}{}
+							shortIndex[len(substring)] = shortMap
+						} else {
+							shortIndex[len(substring)][substring] = struct{}{}
+						}
+					}
+				}
+			}
+		} else {
+			for k := qmin; k <= len(str); k++ {
+				for j := 0; j < len(str)-k+1; j++ {
+					substring := str[j : j+k]
+					if len(substring) >= limitLen {
+						_, ok1 := flagIndex[substring]
+						if ok1 {
+							continue
+						} else {
+							flagIndex[substring] = struct{}{}
+							qgramData := GramPrefixGrams(substring, prefixLen, distance)
+							for n := 0; n < len(qgramData); n++ {
+								longIndexData := utils.NewFuzzyPrefixGram(substring, qgramData[n].Pos())
+								_, ok2 := longIndex[qgramData[n].Gram()]
+								if !ok2 {
+									longIndexString := make(map[int]map[utils.FuzzyPrefixGram]struct{})
+									longIndexString[len(substring)] = make(map[utils.FuzzyPrefixGram]struct{})
+									longIndexString[len(substring)][longIndexData] = struct{}{}
+									longIndex[qgramData[n].Gram()] = longIndexString
+								} else {
+									_, ok3 := longIndex[qgramData[n].Gram()][len(substring)]
+									if !ok3 {
+										longIndex[qgramData[n].Gram()][len(substring)] = make(map[utils.FuzzyPrefixGram]struct{})
+										longIndex[qgramData[n].Gram()][len(substring)][longIndexData] = struct{}{}
+									} else {
+										longIndex[qgramData[n].Gram()][len(substring)][longIndexData] = struct{}{}
+									}
+								}
+							}
+						}
+					} else {
+						_, ok4 := shortIndex[len(substring)]
+						if !ok4 {
+							shortMap := make(map[string]struct{})
+							shortMap[substring] = struct{}{}
+							shortIndex[len(substring)] = shortMap
+						} else {
+							shortIndex[len(substring)][substring] = struct{}{}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	sumIndex := 0
+	sumIndex = sumIndex + len(flagIndex)
+	for _, value := range shortIndex {
+		sumIndex = sumIndex + len(value)
+	}
+	return shortIndex, longIndex
 }

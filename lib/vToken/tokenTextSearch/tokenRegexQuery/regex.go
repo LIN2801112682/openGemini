@@ -46,10 +46,9 @@ func GetSuffixMap(re string, length int) map[string]struct{} {
 	return suffixMap
 }
 
-func RegexSearch(re string, indexRoot *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, tokenMap map[string][]*mpTrie.SearchTreeNode) map[utils.SeriesId]struct{} {
+func RegexSearch(re string, indexRoot *mpTrie.SearchTreeNode, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, tokenMap map[string][]*mpTrie.SearchTreeNode) []utils.SeriesId {
 	fmt.Println("正则表达式:", re)
-	var resArr = make(map[utils.SeriesId]struct{}, 0)
-	var mapTemp = make([]map[utils.SeriesId]struct{}, 0)
+	var resList = make([]utils.SeriesId, 0)
 	q := 3
 	start := time.Now().UnixMicro()
 	//filter_start_time := time.Now().UnixMicro()
@@ -66,25 +65,23 @@ func RegexSearch(re string, indexRoot *mpTrie.SearchTreeNode, filePtr map[int]*o
 	//verification_time := int64(0)
 	for fileId, _ := range filePtr {
 		if !isQ {
-			mapTemp = append(mapTemp, MatchWithoutGramMap(re, indexRoot, fileId, filePtr, addrCache, invertedCache))
+			MatchWithoutGramMap(re, indexRoot, fileId, filePtr, addrCache, invertedCache, &resList)
 		} else {
 			//verification_start_time := time.Now().UnixMicro()
-			mapTemp = append(mapTemp, MatchWithGramMap(tokenMap, suffixMap, re, indexRoot, fileId, filePtr, addrCache, invertedCache))
+			MatchWithGramMap(tokenMap, suffixMap, re, indexRoot, fileId, filePtr, addrCache, invertedCache, &resList)
 			//verification_end_time := time.Now().UnixMicro()
 			//verification_time += verification_end_time - verification_start_time
 		}
 	}
 	end := time.Now().UnixMicro()
-	resArr = utils.OrMaps(mapTemp...)
 	//fmt.Println("验证时间:", verification_time)
-	fmt.Println("花费时间(ms)：", float64(end-start)/1000.0)
-	fmt.Println("结果条数：", len(resArr))
-	return resArr
+	fmt.Println("正则查询时间(ms)：", float64(end-start)/1000.0)
+	fmt.Println("正则结果条数：", len(resList))
+	return resList
 }
 
-func MatchWithGramMap(gramMap map[string][]*mpTrie.SearchTreeNode, suffixMap map[string]struct{}, re string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+func MatchWithGramMap(gramMap map[string][]*mpTrie.SearchTreeNode, suffixMap map[string]struct{}, re string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, resList *[]utils.SeriesId) {
 	regex, _ := regexp.Compile("^" + re + "$")
-	sidmap := make(map[utils.SeriesId]struct{})
 	//token_num := 0
 	for suffix, _ := range suffixMap {
 		positionList, find := gramMap[suffix]
@@ -94,22 +91,13 @@ func MatchWithGramMap(gramMap map[string][]*mpTrie.SearchTreeNode, suffixMap map
 				if regex.MatchString(positionList[i].Data()) {
 					invertIndex1, invertIndex2, invertIndex3 := SearchString(positionList[i].Data(), indexRoot, fileId, filePtr, addrCache, invertedCache)
 					for k, _ := range invertIndex1 {
-						_, isfind := sidmap[k]
-						if !isfind {
-							sidmap[k] = struct{}{}
-						}
+						*resList = append(*resList, k)
 					}
 					for k, _ := range invertIndex2 {
-						_, isfind := sidmap[k]
-						if !isfind {
-							sidmap[k] = struct{}{}
-						}
+						*resList = append(*resList, k)
 					}
 					for k, _ := range invertIndex3 {
-						_, isfind := sidmap[k]
-						if !isfind {
-							sidmap[k] = struct{}{}
-						}
+						*resList = append(*resList, k)
 					}
 				}
 			}
@@ -117,38 +105,26 @@ func MatchWithGramMap(gramMap map[string][]*mpTrie.SearchTreeNode, suffixMap map
 	}
 	//fmt.Println("一共有token数：", len(indexRoot.Children()))
 	//fmt.Println("筛选后token数:", token_num)
-	return sidmap
 }
 
-func MatchWithoutGramMap(re string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) map[utils.SeriesId]struct{} {
+func MatchWithoutGramMap(re string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache, resList *[]utils.SeriesId) {
 	regex, _ := regexp.Compile("^" + re + "$")
-	sidmap := make(map[utils.SeriesId]struct{})
 	childrenlist := indexRoot.Children()
 	for _, children := range childrenlist {
 		label := children.Data()
 		if regex.MatchString(label) {
 			invertIndex1, invertIndex2, invertIndex3 := SearchString(label, indexRoot, fileId, filePtr, addrCache, invertedCache)
 			for k, _ := range invertIndex1 {
-				_, isfind := sidmap[k]
-				if !isfind {
-					sidmap[k] = struct{}{}
-				}
+				*resList = append(*resList, k)
 			}
 			for k, _ := range invertIndex2 {
-				_, isfind := sidmap[k]
-				if !isfind {
-					sidmap[k] = struct{}{}
-				}
+				*resList = append(*resList, k)
 			}
 			for k, _ := range invertIndex3 {
-				_, isfind := sidmap[k]
-				if !isfind {
-					sidmap[k] = struct{}{}
-				}
+				*resList = append(*resList, k)
 			}
 		}
 	}
-	return sidmap
 }
 
 func SearchString(label string, indexRoot *mpTrie.SearchTreeNode, fileId int, filePtr map[int]*os.File, addrCache *mpTrie.AddrCache, invertedCache *mpTrie.InvertedCache) (utils.Inverted_index, utils.Inverted_index, utils.Inverted_index) {
