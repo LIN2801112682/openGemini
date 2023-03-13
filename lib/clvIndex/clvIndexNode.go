@@ -36,7 +36,7 @@ const (
 	close
 )
 
-const SHARDBUFFER = 500000 //100000000
+const SHARDBUFFER = 50000000 //100000000
 
 type CLVIndexNode struct {
 	VgramIndexRoot  *gramIndex.IndexTree
