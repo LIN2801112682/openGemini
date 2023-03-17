@@ -107,7 +107,7 @@ func (s *shard) CreateCursor(ctx context.Context, schema *executor.QuerySchema) 
 	}
 
 	start := time.Now()
-	result, err := s.indexBuilder.Scan(span, record.Str2bytes(schema.Options().(*query.ProcessorOptions).Name), schema.Options().(*query.ProcessorOptions), tsi.MergeSet)
+	result, err := s.indexBuilder.Scan(span, record.Str2bytes(schema.Options().(*query.ProcessorOptions).Name), schema.Options().(*query.ProcessorOptions), tsi.Text)
 	tagSets := result.(tsi.GroupSeries)
 
 	qDuration, _ := ctx.Value(query.QueryDurationKey).(*statistics.StoreSlowQueryStatistics)
@@ -207,8 +207,50 @@ func newCursorSchema(ctx *idKeyCursorContext, schema *executor.QuerySchema) erro
 	return nil
 }
 
+func GetStartTime(tagSets []*tsi.TagSetInfo, schema *executor.QuerySchema) int64 {
+	if len(tagSets) == 0 {
+		return schema.Options().GetStartTime()
+	}
+	startTime := influxql.MaxTime
+	for i := range tagSets {
+		timestamps := tagSets[i].Timestamps
+		for j := range timestamps {
+			timestamp := timestamps[j]
+			if startTime > timestamp[0] {
+				startTime = timestamp[0]
+			}
+		}
+	}
+
+	if startTime > schema.Options().GetStartTime() {
+		return startTime
+	}
+	return schema.Options().GetStartTime()
+}
+
+func GetEndTime(tagSets []*tsi.TagSetInfo, schema *executor.QuerySchema) int64 {
+	if len(tagSets) == 0 {
+		return schema.Options().GetStartTime()
+	}
+	endTime := influxql.MinTime
+	for i := range tagSets {
+		timestamps := tagSets[i].Timestamps
+		for j := range timestamps {
+			timestamp := timestamps[j]
+			if endTime < timestamp[len(timestamp)-1] {
+				endTime = timestamp[len(timestamp)-1]
+			}
+		}
+	}
+
+	if endTime < schema.Options().GetEndTime() {
+		return endTime
+	}
+	return schema.Options().GetEndTime()
+}
+
 func (s *shard) initGroupCursors(querySchema *executor.QuerySchema, parallelism int,
-	readers *immutable.MmsReaders) (comm.KeyCursors, error) {
+	readers *immutable.MmsReaders, tagSets []*tsi.TagSetInfo) (comm.KeyCursors, error) {
 	var schema record.Schemas
 	var filterFieldsIdx []int
 	var filterTags []string
@@ -267,8 +309,8 @@ func (s *shard) initGroupCursors(querySchema *executor.QuerySchema, parallelism 
 		for _, tagName := range c.ctx.filterTags {
 			c.ctx.m[tagName] = (*string)(nil)
 		}
-		c.ctx.tr.Min = querySchema.Options().GetStartTime()
-		c.ctx.tr.Max = querySchema.Options().GetEndTime()
+		c.ctx.tr.Min = GetStartTime(tagSets, querySchema)
+		c.ctx.tr.Max = GetEndTime(tagSets, querySchema)
 		if executor.GetEnableFileCursor() && c.querySchema.HasInSeriesAgg() {
 			c.ctx.decs.SetTr(c.ctx.tr)
 			c.ctx.Ref()
@@ -303,7 +345,7 @@ func (s *shard) createGroupCursors(span *tracing.Span, schema *executor.QuerySch
 		defer groupSpan.Finish()
 	}
 
-	cursors, err := s.initGroupCursors(schema, parallelism, readers)
+	cursors, err := s.initGroupCursors(schema, parallelism, readers, tagSets)
 	if err != nil {
 		return nil, err
 	}
@@ -525,7 +567,6 @@ func hasMultipleColumnsWithFirst(schema *executor.QuerySchema) bool {
 	return false
 }
 
-//
 func (c *groupCursor) nextWithReuse() (*record.Record, comm.SeriesInfoIntf, error) {
 	if c.recordPool == nil {
 		c.recordPool = record.NewCircularRecordPool(c.ctx.aggPool, groupCursorRecordNum, c.GetSchema(), true)
@@ -1369,6 +1410,7 @@ func (s *shard) newSeriesCursor(ctx *idKeyCursorContext, span *tracing.Span, sch
 	tagSet *tsi.TagSetInfo, idx int) (*seriesCursor, error) {
 	var err error
 	sid := tagSet.IDs[idx]
+	filterTime := tagSet.Timestamps[idx]
 	filter := tagSet.Filters[idx]
 	ptTags := &(tagSet.TagsVec[idx])
 
@@ -1396,7 +1438,7 @@ func (s *shard) newSeriesCursor(ctx *idKeyCursorContext, span *tracing.Span, sch
 	if err != nil {
 		return nil, err
 	}
-
+	tsmCursor.filterTime = filterTime
 	// only if tsm or mem table have data, we will create series cursor
 	if tsmCursor != nil || (memTableRecord != nil && memTableRecord.RowNums() > 0) {
 		seriesCursor := getSeriesKeyCursor()
@@ -1672,6 +1714,7 @@ type tsmMergeCursor struct {
 	outOrderRecIter recordIter
 	recordPool      *record.CircularRecordPool
 	limitFirstTime  int64
+	filterTime      []int64
 }
 
 func NewTsmMergeCursor(ctx *idKeyCursorContext, sid uint64, filter influxql.Expr, tags *influx.PointTags, _ *tracing.Span) (*tsmMergeCursor, error) {
@@ -1834,7 +1877,7 @@ func AddLocationsWithFirstTime(l *immutable.LocationCursor, files immutable.Tabl
 
 func (c *tsmMergeCursor) readData(orderLoc bool, dst *record.Record) (*record.Record, error) {
 	c.ctx.decs.Set(c.ctx.decs.Ascending, c.ctx.tr, c.onlyFirstOrLast, c.ops)
-	filterOpts := immutable.NewFilterOpts(c.filter, c.ctx.m, c.ctx.filterFieldsIdx, c.ctx.filterTags, c.tags)
+	filterOpts := immutable.NewFilterOpts(c.filter, c.ctx.m, c.ctx.filterFieldsIdx, c.ctx.filterTags, c.tags, c.filterTime)
 	if orderLoc {
 		return c.locations.ReadData(filterOpts, dst)
 	}
@@ -1960,7 +2003,7 @@ func (c *tsmMergeCursor) FirstTimeOutOfOrderInit() error {
 	//isFirst := true
 	var outRec *record.Record
 	c.ctx.decs.Set(c.ctx.decs.Ascending, c.ctx.tr, c.onlyFirstOrLast, c.ops)
-	filterOpts := immutable.NewFilterOpts(c.filter, c.ctx.m, c.ctx.filterFieldsIdx, c.ctx.filterTags, c.tags)
+	filterOpts := immutable.NewFilterOpts(c.filter, c.ctx.m, c.ctx.filterFieldsIdx, c.ctx.filterTags, c.tags, nil)
 	dst := record.NewRecordBuilder(c.ctx.schema)
 	rec, err := c.outOfOrderLocations.ReadOutOfOrderMeta(filterOpts, dst)
 	if err != nil {

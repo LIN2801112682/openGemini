@@ -214,8 +214,6 @@ type ProcessorOptions struct {
 
 	// SeriesKey is assigned only the query is single time series, and it's used in the index.
 	SeriesKey []byte
-
-	GroupByAllDims bool
 }
 
 // NewProcessorOptionsStmt creates the iterator options from stmt.
@@ -296,7 +294,6 @@ func NewProcessorOptionsStmt(stmt *influxql.SelectStatement, sopt SelectOptions)
 	opt.MaxParallel = sopt.MaxQueryParallel
 	opt.AbortChan = sopt.AbortChan
 	opt.RowsChan = sopt.RowsChan
-	opt.GroupByAllDims = stmt.GroupByAllDims
 
 	return opt, nil
 }
@@ -602,10 +599,6 @@ func (opt *ProcessorOptions) GetOffset() int {
 
 func (opt *ProcessorOptions) GetGroupBy() map[string]struct{} {
 	return opt.GroupBy
-}
-
-func (opt *ProcessorOptions) IsGroupByAllDims() bool {
-	return opt.GroupByAllDims
 }
 
 func (opt *ProcessorOptions) HasInterval() bool {

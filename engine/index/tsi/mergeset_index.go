@@ -20,8 +20,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"path"
-	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -37,10 +35,9 @@ import (
 	"github.com/openGemini/openGemini/lib/record"
 	"github.com/openGemini/openGemini/lib/stringinterner"
 	"github.com/openGemini/openGemini/lib/tracing"
-	"github.com/openGemini/openGemini/lib/util"
 	"github.com/openGemini/openGemini/open_src/github.com/savsgio/dictpool"
+	"github.com/openGemini/openGemini/open_src/influx/index"
 	"github.com/openGemini/openGemini/open_src/influx/influxql"
-	"github.com/openGemini/openGemini/open_src/influx/meta"
 	"github.com/openGemini/openGemini/open_src/influx/query"
 	"github.com/openGemini/openGemini/open_src/vm/protoparser/influx"
 	"github.com/openGemini/openGemini/open_src/vm/uint64set"
@@ -51,7 +48,11 @@ const (
 	nsPrefixKeyToTSID = iota
 	nsPrefixTSIDToKey
 	nsPrefixTagToTSIDs
+	//	nsPrefixCellIDToTSID
 	nsPrefixDeletedTSIDs
+	nsPrefixTSIDToField
+	nsPrefixFieldToPID
+	nsPrefixMstToFieldKey
 )
 
 const (
@@ -60,7 +61,8 @@ const (
 	kvSeparatorChar  = 2
 
 	compositeTagKeyPrefix = '\xfe'
-	MergeSetDirName       = "mergeset"
+	//maxTSIDsPerRow        = 64
+	MergeSetDirName = "mergeset"
 )
 
 var tagFiltersKeyGen uint64
@@ -69,16 +71,6 @@ func invalidateTagCache() {
 	// This function must be fast, since it is called each
 	// time new timeseries is added.
 	atomic.AddUint64(&tagFiltersKeyGen, 1)
-}
-
-var (
-	queueSize     uint32
-	queueSizeMask uint32
-)
-
-func init() {
-	queueSize = util.CeilToPower2(uint32(runtime.NumCPU() << 1))
-	queueSizeMask = queueSize - 1
 }
 
 var kbPool bytesutil.ByteBufferPool
@@ -90,8 +82,7 @@ type MergeSetIndex struct {
 	logger *zap.Logger
 	path   string
 
-	queues []chan *indexRow
-	cache  *IndexCache
+	cache *IndexCache
 
 	// Deleted tsids
 	deletedTSIDs     atomic.Value
@@ -111,10 +102,10 @@ func NewMergeSetIndex(opts *Options) (*MergeSetIndex, error) {
 }
 
 func (idx *MergeSetIndex) Open() error {
-	tablePath := path.Join(idx.path, MergeSetDirName)
-	tb, err := mergeset.OpenTable(tablePath, invalidateTagCache, mergeIndexRows)
+	path := idx.path + "/" + MergeSetDirName
+	tb, err := mergeset.OpenTable(path, invalidateTagCache, mergeIndexRows)
 	if err != nil {
-		return fmt.Errorf("cannot open index:%s, err: %+v", tablePath, err)
+		return fmt.Errorf("cannot open index:%s, err: %+v", path, err)
 	}
 	idx.tb = tb
 	if logger.GetLogger() == nil {
@@ -130,30 +121,7 @@ func (idx *MergeSetIndex) Open() error {
 		return err
 	}
 
-	idx.queues = make([]chan *indexRow, queueSize)
-	for i := 0; i < len(idx.queues); i++ {
-		idx.queues[i] = make(chan *indexRow, 1024)
-	}
-
-	idx.run()
-
 	return nil
-}
-
-func (idx *MergeSetIndex) WriteRow(row *indexRow) {
-	partId := meta.HashID(row.Row.IndexKey) & uint64(queueSizeMask)
-	idx.queues[partId] <- row
-}
-
-func (idx *MergeSetIndex) run() {
-	for i := 0; i < len(idx.queues); i++ {
-		go func(index int) {
-			for row := range idx.queues[index] {
-				row.Row.SeriesId, row.Err = idx.CreateIndexIfNotExistsByRow(row.Row)
-				row.Wg.Done()
-			}
-		}(i)
-	}
 }
 
 func (idx *MergeSetIndex) SetIndexBuilder(builder *IndexBuilder) {
@@ -266,7 +234,7 @@ func (idx *MergeSetIndex) CreateIndexIfNotExists(mmRows *dictpool.Dict) error {
 	return nil
 }
 
-func (idx *MergeSetIndex) CreateIndexIfNotExistsByRow(row *influx.Row) (uint64, error) {
+func (idx *MergeSetIndex) CreateIndexIfNotExistsByRow(row *influx.Row, version uint16) (uint64, error) {
 	vkey := kbPool.Get()
 	defer kbPool.Put(vkey)
 	vname := kbPool.Get()
@@ -274,10 +242,10 @@ func (idx *MergeSetIndex) CreateIndexIfNotExistsByRow(row *influx.Row) (uint64, 
 
 	var sid uint64
 	vname.B = append(vname.B[:0], []byte(row.Name)...)
-	vname.B = encoding.MarshalUint16(vname.B, row.Version)
+	vname.B = encoding.MarshalUint16(vname.B, version)
 	// retry get seriesId in Lock
 	vkey.B = append(vkey.B[:0], row.IndexKey...)
-	vkey.B = encoding.MarshalUint16(vkey.B, row.Version)
+	vkey.B = encoding.MarshalUint16(vkey.B, version)
 	sid, err := idx.createIndexesIfNotExists(vkey.B, vname.B, row.Tags, row.ShardKey)
 	return sid, err
 }
@@ -401,19 +369,20 @@ func (idx *MergeSetIndex) SearchSeries(series [][]byte, name []byte, condition i
 	return series, nil
 }
 
-func (idx *MergeSetIndex) SearchSeriesWithOpts(span *tracing.Span, name []byte, opt *query.ProcessorOptions) (GroupSeries, error) {
-	var indexSpan, search, tsid_iter, sortTs *tracing.Span
-	if span != nil {
-		indexSpan = span.StartSpan("index_stat").StartPP()
-		defer indexSpan.Finish()
-	}
+func (idx *MergeSetIndex) GetVersion(name []byte) (uint16, bool) {
+	return idx.indexBuilder.getVersion(record.Bytes2str(name))
+}
+
+func (idx *MergeSetIndex) SearchSeriesIterator(span *tracing.Span, name []byte, opt *query.ProcessorOptions) (index.SeriesIDIterator, error) {
+	var search *tracing.Span
+
 	version, ok := idx.indexBuilder.getVersion(record.Bytes2str(name))
 	if !ok {
 		return nil, nil
 	}
 	// need add version for delete measurement safeguard
-	if indexSpan != nil {
-		search = indexSpan.StartSpan("tsid_search")
+	if span != nil {
+		search = span.StartSpan("tsid_search")
 		search.StartPP()
 	}
 
@@ -440,16 +409,29 @@ func (idx *MergeSetIndex) SearchSeriesWithOpts(span *tracing.Span, name []byte, 
 	if itr == nil {
 		return nil, nil
 	}
+	return itr, nil
+}
 
-	var dims []string
-	var totalSeriesKeyLen int64
-	if len(opt.Dimensions) > 0 {
-		dims = make([]string, len(opt.Dimensions))
-		copy(dims, opt.Dimensions)
-		sort.Strings(dims)
+func (idx *MergeSetIndex) SearchSeriesWithOpts(span *tracing.Span, name []byte, opt *query.ProcessorOptions) (GroupSeries, error) {
+	var indexSpan, tsidIter, sortTs *tracing.Span
+	if span != nil {
+		indexSpan = span.StartSpan("index_stat").StartPP()
+		defer indexSpan.Finish()
 	}
 
-	kvReflection := NewTagKeyReflection(opt.Dimensions, dims)
+	itr, err := idx.SearchSeriesIterator(indexSpan, name, opt)
+	if err != nil {
+		return nil, err
+	}
+	if itr == nil {
+		return nil, nil
+	}
+
+	dims := make([]string, len(opt.Dimensions))
+	copy(dims, opt.Dimensions)
+	sort.Strings(dims)
+	dimPos := genDimensionPosition(opt.Dimensions)
+
 	tagSets := make(map[string]*TagSetInfo)
 	releaseSeriesInfo := func() {
 		for _, v := range tagSets {
@@ -458,14 +440,15 @@ func (idx *MergeSetIndex) SearchSeriesWithOpts(span *tracing.Span, name []byte, 
 	}
 
 	if indexSpan != nil {
-		tsid_iter = indexSpan.StartSpan("tsid_iter")
-		tsid_iter.StartPP()
+		tsidIter = indexSpan.StartSpan("tsid_iter")
+		tsidIter.StartPP()
 	}
 
 	deletedTSIDs := idx.getDeletedTSIDs()
 	var seriesN int
 	var indexKeyBuf []byte // reused
 	var groupTagKey []byte // reused
+	var totalSeriesKeyLen int64
 
 	for {
 		var tagsBuf influx.PointTags
@@ -495,8 +478,7 @@ func (idx *MergeSetIndex) SearchSeriesWithOpts(span *tracing.Span, name []byte, 
 		}
 
 		if len(dims) > 0 {
-			kvReflection.Reset()
-			groupTagKey = MakeGroupTagsKey(dims, tagsBuf, groupTagKey, kvReflection)
+			groupTagKey = MakeGroupTagsKey(dims, tagsBuf, groupTagKey, dimPos)
 		}
 
 		tagSet, ok := tagSets[string(groupTagKey)]
@@ -517,10 +499,10 @@ func (idx *MergeSetIndex) SearchSeriesWithOpts(span *tracing.Span, name []byte, 
 		seriesN++
 	}
 
-	if tsid_iter != nil {
-		tsid_iter.SetNameValue(fmt.Sprintf("tagset_count=%d, series_cnt=%d, serieskey_len=%d",
+	if tsidIter != nil {
+		tsidIter.SetNameValue(fmt.Sprintf("tagset_count=%d, series_cnt=%d, serieskey_len=%d",
 			len(tagSets), seriesN, totalSeriesKeyLen))
-		tsid_iter.Finish()
+		tsidIter.Finish()
 	}
 
 	if indexSpan != nil {
@@ -877,7 +859,7 @@ func (idx *MergeSetIndex) DebugFlush() {
 	idx.tb.DebugFlush()
 }
 
-func MergeSetIndexHandler(opt *Options, primaryIndex PrimaryIndex) *IndexAmRoutine {
+func MergeSetIndexHandler(opt *Options, primaryIndex PrimaryIndex) (*IndexAmRoutine, error) {
 	return &IndexAmRoutine{
 		amKeyType:    MergeSet,
 		amOpen:       MergeSetOpen,
@@ -888,7 +870,7 @@ func MergeSetIndexHandler(opt *Options, primaryIndex PrimaryIndex) *IndexAmRouti
 		amClose:      MergeSetClose,
 		index:        primaryIndex,
 		primaryIndex: nil,
-	}
+	}, nil
 }
 
 // indexRelation contains MergeSetIndex
@@ -902,13 +884,10 @@ func MergeSetOpen(index interface{}) error {
 	return mergeindex.Open()
 }
 
-func MergeSetInsert(index interface{}, primaryIndex PrimaryIndex, name []byte, row interface{}) (uint64, error) {
-	mergeIndex, ok := index.(*MergeSetIndex)
-	if !ok {
-		return 0, fmt.Errorf("index %v is not a MergeSetIndex", index)
-	}
-	insertPoint := row.(*influx.Row)
-	return mergeIndex.CreateIndexIfNotExistsByRow(insertPoint)
+func MergeSetInsert(index interface{}, primaryIndex PrimaryIndex, name []byte, row interface{}, version uint16) (uint64, error) {
+	mergeindex := index.(*MergeSetIndex)
+	insertPoints := row.(*influx.Row)
+	return mergeindex.CreateIndexIfNotExistsByRow(insertPoints, version)
 }
 
 // upper function call should analyze result
@@ -932,6 +911,14 @@ type tagKeyReflection struct {
 	buf   [][]byte
 }
 
+func genDimensionPosition(dims []string) map[string]int {
+	dimPos := make(map[string]int, len(dims))
+	for i, dim := range dims {
+		dimPos[dim] = i
+	}
+	return dimPos
+}
+
 func NewTagKeyReflection(src, curr []string) *tagKeyReflection {
 	if len(src) != len(curr) {
 		panic("src len doesn't equal to curr len")
@@ -951,37 +938,34 @@ func NewTagKeyReflection(src, curr []string) *tagKeyReflection {
 	return t
 }
 
-func (t *tagKeyReflection) Reset() {
-	for i := range t.buf {
-		t.buf[i] = t.buf[i][:0]
-	}
-}
-
-func MakeGroupTagsKey(dims []string, tags influx.PointTags, dst []byte, reflect *tagKeyReflection) []byte {
+func MakeGroupTagsKey(dims []string, tags influx.PointTags, dst []byte, dimPos map[string]int) []byte {
 	if len(dims) == 0 || len(tags) == 0 {
 		return nil
 	}
 
+	result := make([]string, len(dims))
 	i, j := 0, 0
 	for i < len(dims) && j < len(tags) {
 		if dims[i] < tags[j].Key {
-			reflect.buf[reflect.order[i]] = append(reflect.buf[reflect.order[i]], bytesutil.ToUnsafeBytes(dims[i])...)
-			reflect.buf[reflect.order[i]] = append(reflect.buf[reflect.order[i]], []byte{'=', ','}...)
+			result[dimPos[dims[i]]] = dims[i] + "=,"
+			//reflect.buf[reflect.order[i]] = append(reflect.buf[reflect.order[i]], bytesutil.ToUnsafeBytes(dims[i])...)
+			//reflect.buf[reflect.order[i]] = append(reflect.buf[reflect.order[i]], []byte{'=', ','}...)
 			i++
 		} else if dims[i] > tags[j].Key {
 			j++
 		} else {
-			reflect.buf[reflect.order[i]] = append(reflect.buf[reflect.order[i]], bytesutil.ToUnsafeBytes(dims[i])...)
+			result[dimPos[dims[i]]] = dims[i] + "=" + tags[j].Value + ","
+			/*reflect.buf[reflect.order[i]] = append(reflect.buf[reflect.order[i]], bytesutil.ToUnsafeBytes(dims[i])...)
 			reflect.buf[reflect.order[i]] = append(reflect.buf[reflect.order[i]], '=')
 			reflect.buf[reflect.order[i]] = append(reflect.buf[reflect.order[i]], bytesutil.ToUnsafeBytes(tags[j].Value)...)
-			reflect.buf[reflect.order[i]] = append(reflect.buf[reflect.order[i]], ',')
+			reflect.buf[reflect.order[i]] = append(reflect.buf[reflect.order[i]], ',')*/
 
 			i++
 			j++
 		}
 	}
-	for k := range reflect.order {
-		dst = append(dst, reflect.buf[k]...)
+	for k := range result {
+		dst = append(dst, bytesutil.ToUnsafeBytes(result[k])...)
 	}
 
 	// skip last ','

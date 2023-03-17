@@ -69,8 +69,7 @@ type TSStore struct {
 	HierarchicalStore retention.Config `toml:"hierarchical-storage"`
 
 	// TLS provides configuration options for all https endpoints.
-	TLS      tlsconfig.Config `toml:"tls"`
-	Analysis Castor           `toml:"castor"`
+	TLS tlsconfig.Config `toml:"tls"`
 }
 
 // NewTSStore returns an instance of Config with reasonable defaults.
@@ -89,7 +88,6 @@ func NewTSStore() *TSStore {
 	c.HierarchicalStore = retention.NewConfig()
 	c.Gossip = NewGossip()
 
-	c.Analysis = NewCastor()
 	return c
 }
 
@@ -108,7 +106,6 @@ func (c *TSStore) Validate() error {
 		c.TLS,
 		c.Logging,
 		c.Spdy,
-		c.Analysis,
 	}
 
 	for _, item := range items {
@@ -142,7 +139,6 @@ type Store struct {
 	IngesterAddress string `toml:"store-ingest-addr"`
 	SelectAddress   string `toml:"store-select-addr"`
 	DataDir         string `toml:"store-data-dir"`
-	Domain          string `toml:"domain"`
 	WALDir          string `toml:"store-wal-dir"`
 	MetaDir         string `toml:"store-meta-dir"`
 	Engine          string `toml:"engine-type"`
@@ -271,14 +267,6 @@ func (c Store) ValidateEngine(engines []string) error {
 	}
 
 	return errno.NewError(errno.UnrecognizedEngine, c.Engine)
-}
-
-func (c *Store) InsertAddr() string {
-	return CombineDomain(c.Domain, c.IngesterAddress)
-}
-
-func (c *Store) SelectAddr() string {
-	return CombineDomain(c.Domain, c.SelectAddress)
 }
 
 func uint64Limit(min, max uint64, v uint64) uint64 {

@@ -96,8 +96,6 @@ func NewStreamAggregateTransform(
 	if trans.proRes.isSingleCall {
 		if trans.proRes.isTimeUniqueCall {
 			trans.postProcess = trans.postProcessSingleTimeUnique
-		} else if trans.proRes.isUDAFCall {
-			trans.postProcess = trans.postProcessWithUDAF
 		} else if !trans.proRes.isTransformationCall && !trans.proRes.isIntegralCall {
 			trans.postProcess = trans.postProcessSingleAggAndSelector
 		} else {
@@ -109,8 +107,6 @@ func NewStreamAggregateTransform(
 	// post process for multi call
 	if trans.proRes.isTimeUniqueCall {
 		trans.postProcess = trans.postProcessMultiTimeUnique
-	} else if trans.proRes.isUDAFCall {
-		trans.postProcess = trans.postProcessWithUDAF
 	} else if trans.proRes.isTransformationCall {
 		trans.postProcess = trans.postProcessMultiTransformation
 	} else {
@@ -328,10 +324,6 @@ func (trans *StreamAggregateTransform) reduce(
 
 		tracing.SpanElapsed(trans.computeSpan, func() {
 			trans.compute(c)
-			if trans.iteratorParam.err != nil {
-				errs.ch <- trans.iteratorParam.err
-				errSignals.ch <- struct{}{}
-			}
 		})
 	}
 }
@@ -359,9 +351,6 @@ func (trans *StreamAggregateTransform) preProcess(c Chunk) {
 }
 
 func (trans *StreamAggregateTransform) postProcessSingleTimeUnique(_ Chunk) {
-}
-
-func (trans *StreamAggregateTransform) postProcessWithUDAF(_ Chunk) {
 }
 
 func (trans *StreamAggregateTransform) postProcessSingleTransformation(_ Chunk) {
@@ -435,42 +424,6 @@ func (trans *StreamAggregateTransform) postProcessMultiTimeUnique(c Chunk) {
 	trans.prevSameInterval = trans.sameInterval
 }
 
-func (trans *StreamAggregateTransform) postProcessMultiTransformation(c Chunk) {
-	var end, vs int
-	firstIndex, lastIndex := 0, len(c.TagIndex())-1
-	for i, start := range c.TagIndex() {
-		if i == lastIndex {
-			end = c.NumberOfRows()
-		} else {
-			end = c.TagIndex()[i+1]
-		}
-
-		addLen := end - start
-		if i == firstIndex && trans.prevSameInterval {
-			vs = 0
-		} else {
-			vs = trans.proRes.offset
-		}
-		// update the time and intervalIndex
-		for j := vs; j < addLen; j++ {
-			trans.newChunk.AppendTime(c.TimeByIndex(start + j))
-		}
-		// update the tag and tagIndex
-		if addLen > vs {
-			if i == firstIndex && trans.prevSameInterval &&
-				(trans.newChunk.TagLen() > 1 && bytes.Equal(c.Tags()[0].Subset(trans.opt.Dimensions),
-					trans.newChunk.Tags()[trans.newChunk.TagLen()-1].Subset(trans.opt.Dimensions))) {
-				continue
-			} else {
-				tag, idx := c.Tags()[i], trans.newChunk.NumberOfRows()-(addLen-vs)
-				trans.newChunk.AppendIntervalIndex(idx)
-				trans.newChunk.AppendTagsAndIndex(tag, idx)
-			}
-		}
-	}
-	trans.prevSameInterval = trans.sameInterval
-}
-
 func (trans *StreamAggregateTransform) updateTagAndTagIndexTimeUniqueOnce(c Chunk, duplicateIndex []int64, start, end, ds, i, firstIndex int) {
 	var dupCount, vs int
 	addLen := end - start
@@ -516,6 +469,20 @@ func (trans *StreamAggregateTransform) updateTagAndTagIndexOnce(c Chunk, start, 
 		trans.newChunk.AppendIntervalIndex(idx)
 		trans.newChunk.AppendTagsAndIndex(tag, idx)
 	}
+}
+
+func (trans *StreamAggregateTransform) postProcessMultiTransformation(c Chunk) {
+	var end int
+	firstIndex, lastIndex := 0, len(c.TagIndex())-1
+	for i, start := range c.TagIndex() {
+		if i == lastIndex {
+			end = c.NumberOfRows()
+		} else {
+			end = c.TagIndex()[i+1]
+		}
+		trans.updateTagAndTagIndexOnce(c, start, end, i, firstIndex)
+	}
+	trans.prevSameInterval = trans.sameInterval
 }
 
 func (trans *StreamAggregateTransform) postProcessMultiAggAndSelector(c Chunk) {

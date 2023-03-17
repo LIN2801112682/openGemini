@@ -48,9 +48,8 @@ type IndexType int
 
 const (
 	MergeSet IndexType = iota
-
 	Text
-
+	Field
 	defaultSeriesKeyLen = 64
 )
 
@@ -78,8 +77,8 @@ func putSeriesKeyBuf(buf []byte) {
 }
 
 type TagSetInfo struct {
-	ref int64
-
+	ref        int64
+	Timestamps [][]int64 //todo
 	IDs        []uint64
 	Filters    []influxql.Expr
 	SeriesKeys [][]byte           // encoded series key
@@ -109,6 +108,19 @@ func (t *TagSetInfo) Swap(i, j int) {
 
 func NewTagSetInfo() *TagSetInfo {
 	return setPool.get()
+}
+
+func NewTagSetInfoRe() *TagSetInfo {
+	const defaultElementNum = 64
+	return &TagSetInfo{
+		ref:        0,
+		key:        make([]byte, 0, 32),
+		Timestamps: make([][]int64, 0),
+		IDs:        make([]uint64, 0, defaultElementNum),
+		SeriesKeys: make([][]byte, 0, defaultElementNum),
+		Filters:    make([]influxql.Expr, 0, defaultElementNum),
+		TagsVec:    make([]influx.PointTags, 0, defaultElementNum),
+	}
 }
 
 func (t *TagSetInfo) reset() {
@@ -189,9 +201,9 @@ func (p *tagSetInfoPool) get() (set *TagSetInfo) {
 			return v.(*TagSetInfo)
 		}
 		return &TagSetInfo{
-			ref: 0,
-			key: make([]byte, 0, 32),
-
+			ref:        0,
+			key:        make([]byte, 0, 32),
+			Timestamps: make([][]int64, 0),
 			IDs:        make([]uint64, 0, defaultElementNum),
 			SeriesKeys: make([][]byte, 0, defaultElementNum),
 			Filters:    make([]influxql.Expr, 0, defaultElementNum),
@@ -245,6 +257,8 @@ type Index interface {
 	GetDeletePrimaryKeys(name []byte, condition influxql.Expr, tr TimeRange) ([]uint64, error)
 
 	SetIndexBuilder(builder *IndexBuilder)
+
+	GetVersion([]byte) (uint16, bool)
 
 	DeleteTSIDs(name []byte, condition influxql.Expr, tr TimeRange) error
 

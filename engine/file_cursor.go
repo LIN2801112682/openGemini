@@ -173,7 +173,7 @@ func (f *fileCursor) readPreAggData() (*DataBlockInfo, error) {
 	}
 
 	filter := f.tagSet.Filters[i]
-	filterOpts := immutable.NewFilterOpts(filter, f.ctx.m, f.ctx.filterFieldsIdx, f.ctx.filterTags, ptTags)
+	filterOpts := immutable.NewFilterOpts(filter, f.ctx.m, f.ctx.filterFieldsIdx, f.ctx.filterTags, ptTags, nil)
 	orderRec := f.recordPool.GetBySchema(f.ctx.schema)
 	rec, err := f.loc.ReadData(filterOpts, orderRec)
 	if err != nil {
@@ -245,7 +245,7 @@ func (f *fileCursor) GetRecord(sInfo *seriesInfo, i int, ptTags *influx.PointTag
 		f.memIter.init(f.getSeriesNotInFile(sid))
 	}
 	filter := f.tagSet.Filters[i]
-	filterOpts := immutable.NewFilterOpts(filter, f.ctx.m, f.ctx.filterFieldsIdx, f.ctx.filterTags, ptTags)
+	filterOpts := immutable.NewFilterOpts(filter, f.ctx.m, f.ctx.filterFieldsIdx, f.ctx.filterTags, ptTags, nil)
 	orderRec := f.recordPool.GetBySchema(f.ctx.schema)
 	rec, err := f.loc.ReadData(filterOpts, orderRec)
 	if err != nil {

@@ -100,7 +100,3 @@ func (f FuncRoutineFactory) Create(args ...interface{}) (interface{}, error) {
 type AggregateOp interface {
 	Factory() RoutineFactory
 }
-type UDAFOp interface {
-	AggregateOp
-	CanPushDownSeries() bool
-}

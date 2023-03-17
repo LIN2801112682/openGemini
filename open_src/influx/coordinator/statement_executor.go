@@ -35,6 +35,7 @@ import (
 	originql "github.com/influxdata/influxql"
 	"github.com/openGemini/openGemini/coordinator"
 	"github.com/openGemini/openGemini/engine/executor"
+	"github.com/openGemini/openGemini/engine/index/tsi"
 	"github.com/openGemini/openGemini/lib/errno"
 	"github.com/openGemini/openGemini/lib/logger"
 	meta "github.com/openGemini/openGemini/lib/metaclient"
@@ -385,7 +386,21 @@ func (e *StatementExecutor) executeCreateMeasurementStatement(stmt *influxql.Cre
 	}
 	e.StmtExecLogger.Info("create measurement ", zap.String("name", stmt.Name))
 	ski := &meta2.ShardKeyInfo{ShardKey: stmt.ShardKey, Type: stmt.Type}
-	indexR := &meta2.IndexRelation{Oid: 1, IndexName: stmt.IndexType}
+	//indexR := &meta2.IndexRelation{Oid: 1, IndexName: stmt.IndexType}
+	indexR := &meta2.IndexRelation{}
+	if len(stmt.IndexList) > 0 {
+		for i, indexType := range stmt.IndexType {
+			oid, err := tsi.GetIndexIdByName(indexType)
+			if err != nil {
+				return err
+			}
+			if oid == uint32(tsi.Field) && len(stmt.IndexList[i]) > 1 {
+				return fmt.Errorf("cannot create field index for multiple columns: %v", stmt.IndexList[i])
+			}
+			indexR.Oids = append(indexR.Oids, oid)
+		}
+	}
+
 	indexLists := make([]*meta2.IndexList, len(stmt.IndexList))
 	for i, indexList := range stmt.IndexList {
 		indexLists[i] = &meta2.IndexList{
@@ -841,11 +856,6 @@ func (e *StatementExecutor) createPipelineExecutor(ctx context.Context, stmt *in
 
 	defer func() {
 		if e := recover(); e != nil {
-			internalErr, ok := e.(*errno.Error)
-			if ok && errno.Equal(internalErr, errno.DtypeNotSupport) {
-				panic(internalErr)
-			}
-
 			log := logger.NewLogger(errno.ModuleQueryEngine).With(zap.String("query", "pipeline executor"))
 			stackInfo := fmt.Errorf("runtime panic: %v\n %s", e, string(debug.Stack())).Error()
 			log.Error(stackInfo, zap.Uint64("trace_id", opt.Traceid))

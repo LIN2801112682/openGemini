@@ -108,13 +108,13 @@ func (rs Rows) Swap(i, j int) {
 // Row is a single influx row.
 type Row struct {
 	Name         string
-	Version      uint16
 	Tags         PointTags
 	Fields       Fields
 	ShardKey     []byte
 	Timestamp    int64
 	IndexKey     []byte
 	SeriesId     uint64
+	PrimaryId    uint64
 	IndexOptions IndexOptions
 }
 
@@ -151,6 +151,7 @@ func (r *Row) Clone(rr *Row) {
 	r.Timestamp = rr.Timestamp
 	r.IndexKey = rr.IndexKey
 	r.SeriesId = rr.SeriesId
+	r.PrimaryId = rr.PrimaryId
 	r.IndexOptions = rr.IndexOptions
 }
 
@@ -1168,7 +1169,7 @@ func parseFieldNumValue(s string) (float64, int32, error) {
 	}
 
 	f := fastfloat.ParseBestEffort(s)
-	if math.IsNaN(f) || math.IsInf(f, 0) {
+	if math.IsNaN(f) {
 		return 0, Field_Type_Unknown, fmt.Errorf("invalid number")
 	}
 

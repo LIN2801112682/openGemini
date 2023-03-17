@@ -1,0 +1,134 @@
+/*
+Copyright 2022 Huawei Cloud Computing Technologies Co., Ltd.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+	http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+package clvIndex
+
+import (
+	"fmt"
+	"github.com/openGemini/openGemini/lib/mpTrie"
+	"github.com/openGemini/openGemini/lib/utils"
+	"github.com/openGemini/openGemini/lib/vGram/gramDic/gramClvc"
+	"github.com/openGemini/openGemini/lib/vToken/tokenDic/tokenClvc"
+	"os"
+)
+
+/*
+	QMINGRAM and QMAXGRAM are the minimum and maximum lengths of the tokenizer segmented under the VGRAM index.
+	QMINTOKEN and QMAXTOKEN are the minimum and maximum lengths of the tokenizer tokens under the VTOKEN index.
+	TGRAM and TTOKEN are the parameter thresholds used by the dictionary (word segmenter) under the VGRAM and VTOKEN indexes respectively,It is only used when constructing the dictionary and is an empirical threshold.
+	GRAMWLEN and TOKENWLEN are the number of loads in building a learned dictionary query.
+	MAXDICBUFFER is the number of data entries for a SHARD build dictionary, DicIndex is a counter, BuffDicStrings are used to store a batch of log data to build a dictionary.
+*/
+
+const QMINGRAM = 2
+const QMAXGRAM = 50
+const LOGTREEMAX = 50
+const QMINTOKEN = 1
+const QMAXTOKEN = 7
+const TGRAM = 100
+const TTOKEN = 70
+const GRAMWLEN = 20
+const TOKENWLEN = 20
+
+const PREFIXLEN = 5
+const ED = 2
+const REGEX_Q = 3
+
+const MAXDICBUFFER = 500000
+
+var DicIndex = 0
+var BuffDicStrings []utils.LogSeries
+
+type CLVDictionary struct {
+	DicType       CLVDicType
+	VgramDicRoot  *gramClvc.TrieTree
+	VtokenDicRoot *tokenClvc.TrieTree
+}
+
+func NewCLVDictionary() *CLVDictionary {
+	return &CLVDictionary{
+		DicType:       CLVC,
+		VgramDicRoot:  gramClvc.NewTrieTree(QMINGRAM, QMAXGRAM),
+		VtokenDicRoot: tokenClvc.NewTrieTree(QMINTOKEN, QMAXTOKEN),
+	}
+}
+
+func (clvDic *CLVDictionary) CreateDictionaryIfNotExists(log string, tsid uint64, timeStamp int64, indexType CLVIndexType, path string) {
+	if DicIndex < MAXDICBUFFER {
+		BuffDicStrings = append(BuffDicStrings, utils.LogSeries{Log: log, Tsid: tsid, TimeStamp: timeStamp})
+		DicIndex += 1
+	}
+	if DicIndex == MAXDICBUFFER {
+		fmt.Println("===========dic data ready===========")
+		if indexType == VGRAM {
+			clvDic.CreateCLVVGramDictionaryIfNotExists(BuffDicStrings, path)
+		}
+		if indexType == VTOKEN {
+			clvDic.CreateCLVVTokenDictionaryIfNotExists(BuffDicStrings, path)
+		}
+	}
+}
+
+func (clvDic *CLVDictionary) CreateCLVVGramDictionaryIfNotExists(buffDicStrings []utils.LogSeries, path string) {
+	if clvDic.DicType == CLVC {
+		clvcdic := gramClvc.NewCLVCDic(QMINGRAM, QMAXGRAM)
+		clvcdic.GenerateClvcDictionaryTree(buffDicStrings, QMINGRAM, QMAXGRAM, TGRAM)
+		//clvcdic.TrieTree.PrintTree()
+		dicPath := path + "/clvTable/" + "logs/" + "VGRAM/" + "dic/"
+		dicPathFile := dicPath + "dic0.txt"
+		os.MkdirAll(dicPath, os.ModePerm)
+		dicFile, err := os.OpenFile(dicPathFile, os.O_CREATE|os.O_WRONLY, 0644)
+		defer dicFile.Close()
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+		mpTrie.SerializeGramDicToFile(clvcdic.TrieTree, dicPathFile)
+		clvDic.VgramDicRoot = mpTrie.UnserializeGramDicFromFile(dicPathFile, QMINGRAM, QMAXGRAM)
+		//clvDic.VgramClvcDicRoot.PrintTree()
+	}
+	/*if clvDic.DicType == CLVL {
+		sampleStrOfWlen := utils.HasSample(buffDicStrings, GRAMWLEN)
+		bufflogs := utils.LogSeriesToMap(buffDicStrings)
+		clvldic := gramClvl.NewCLVLDic(QMINGRAM, QMAXGRAM)
+		clvldic.GenerateClvlDictionaryTree(bufflogs, QMINGRAM, sampleStrOfWlen)
+		clvDic.VgramDicRoot = clvldic.TrieTree
+	}*/
+}
+
+func (clvDic *CLVDictionary) CreateCLVVTokenDictionaryIfNotExists(buffDicStrings []utils.LogSeries, path string) {
+	if clvDic.DicType == CLVC {
+		clvcdic := tokenClvc.NewCLVCDic(QMINTOKEN, QMAXTOKEN)
+		clvcdic.GenerateClvcDictionaryTree(buffDicStrings, QMINTOKEN, QMAXTOKEN, TTOKEN)
+		//clvcdic.TrieTree.PrintTree()
+		dicPath := path + "/clvTable/" + "logs/" + "VTOKEN/" + "dic/"
+		dicPathFile := dicPath + "dic0.txt"
+		os.MkdirAll(dicPath, os.ModePerm)
+		dicFile, err := os.OpenFile(dicPathFile, os.O_CREATE|os.O_WRONLY, 0644)
+		defer dicFile.Close()
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+		mpTrie.SerializeTokenDicToFile(clvcdic.TrieTree, dicPathFile)
+		clvDic.VtokenDicRoot = mpTrie.UnserializeTokenDicFromFile(dicPathFile, QMINTOKEN, QMAXTOKEN)
+		//clvDic.VtokenClvcDicRoot.PrintTree()
+	}
+	/*if clvDic.DicType == CLVL {
+		sampleStrOfWlen := utils.HasSample(buffDicStrings, TOKENWLEN)
+		bufflogs := utils.LogSeriesToMap(buffDicStrings)
+		clvldic := tokenClvl.NewCLVLDic(QMINTOKEN, QMAXTOKEN)
+		clvldic.GenerateClvlDictionaryTree(bufflogs, QMINTOKEN, sampleStrOfWlen)
+		clvDic.VtokenDicRoot = clvldic.TrieTree
+	}*/
+}

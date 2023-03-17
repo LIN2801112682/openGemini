@@ -21,6 +21,5 @@ const (
 	TO_UPPER_OP
 	SUM_OP
 	COUNT_OP
-	CASTOR_OP
 	UNKNOWN_OP
 )

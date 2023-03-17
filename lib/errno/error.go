@@ -59,8 +59,6 @@ const (
 	ModuleWal           = 15
 	ModuleStat          = 16
 	ModuleShard         = 17
-	ModuleDownSample    = 18
-	ModuleCastor        = 19
 )
 
 const (

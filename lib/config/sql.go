@@ -63,8 +63,7 @@ type TSSql struct {
 	HTTP httpdConfig.Config `toml:"http"`
 
 	// TLS provides configuration options for all https endpoints.
-	TLS      tlsconfig.Config `toml:"tls"`
-	Analysis Castor           `toml:"castor"`
+	TLS tlsconfig.Config `toml:"tls"`
 }
 
 // NewTSSql returns an instance of Config with reasonable defaults.
@@ -75,7 +74,6 @@ func NewTSSql() *TSSql {
 	c.Monitor = NewMonitor(AppSql)
 	c.Logging = NewLogger(AppSql)
 	c.HTTP = httpdConfig.NewConfig()
-	c.Analysis = NewCastor()
 	return c
 }
 
@@ -89,7 +87,6 @@ func (c *TSSql) Validate() error {
 		c.Coordinator,
 		c.HTTP,
 		c.Spdy,
-		c.Analysis,
 	}
 
 	for _, item := range items {

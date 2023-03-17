@@ -17,9 +17,7 @@ package config
 
 import (
 	"errors"
-	"fmt"
 	"io/ioutil"
-	"net"
 	"path"
 
 	"github.com/BurntSushi/toml"
@@ -110,19 +108,6 @@ func (c Common) Validate() error {
 
 func (c *Common) GetLogging() *Logger {
 	return nil
-}
-
-func CombineDomain(domain, addr string) string {
-	if domain == "" {
-		return addr
-	}
-
-	_, port, err := net.SplitHostPort(addr)
-	if err != nil {
-		return addr
-	}
-
-	return fmt.Sprintf("%s:%s", domain, port)
 }
 
 func (c *Common) Corrector() {

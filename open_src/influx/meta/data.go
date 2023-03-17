@@ -374,9 +374,9 @@ func (data *Data) CreateMeasurement(database string, rpName string, mst string, 
 
 		if indexR != nil {
 			newIndexR := IndexRelation{
-				Rid:       indexR.GetRid(),
-				Oid:       indexR.GetOid(),
-				IndexName: indexR.GetIndexName(),
+				Rid:        indexR.GetRid(),
+				Oids:       indexR.GetOid(),
+				IndexNames: indexR.GetIndexName(),
 			}
 			indexLists := indexR.GetIndexLists()
 			newIndexR.IndexList = make([]*IndexList, len(indexLists))
@@ -2116,9 +2116,8 @@ func (data *Data) UpdateNodeStatus(id uint64, status int32, lTime uint64, gossip
 	updateStatus := serf.MemberStatus(status)
 	dn.Status = updateStatus
 	dn.LTime = lTime
-	if dn.GossipAddr == "" {
-		_, port, _ := net.SplitHostPort(gossipAddr)
-		dn.GossipAddr = net.JoinHostPort(dn.Host, port)
+	if updateStatus == serf.StatusAlive {
+		dn.GossipAddr = gossipAddr
 	}
 
 	if data.TakeOverEnabled || updateStatus == serf.StatusFailed {
